@@ -890,6 +890,41 @@ function PromptBattle({ players, onAddScore, onDone }) {
 
 // ── BUZZER MODE ───────────────────────────────────────────────
 const BUZZER_COLORS = ["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7","#ec4899","#38bdf8"];
+
+// ── INDIAN PAYMENT DOMAIN QUESTION BANK ───────────────────────
+const BUZZER_QUESTIONS = shuffle([
+  {q:"What does UPI stand for?", a:"Unified Payments Interface", hint:"Launched by NPCI in 2016"},
+  {q:"Which organisation governs UPI in India?", a:"NPCI (National Payments Corporation of India)", hint:"A not-for-profit entity"},
+  {q:"What is the maximum UPI transaction limit per day (general)?", a:"₹1 lakh (₹1,00,000)", hint:"RBI sets this limit"},
+  {q:"Which year was UPI officially launched?", a:"2016", hint:"August 25, 2016"},
+  {q:"What does IMPS stand for?", a:"Immediate Payment Service", hint:"Works 24×7×365"},
+  {q:"What does NEFT stand for?", a:"National Electronic Funds Transfer", hint:"Operates in half-hourly batches"},
+  {q:"What does RTGS stand for?", a:"Real Time Gross Settlement", hint:"Minimum ₹2 lakh transfer"},
+  {q:"What is the full form of NACH?", a:"National Automated Clearing House", hint:"Used for recurring mandates"},
+  {q:"Which card network is India's domestic alternative to Visa/Mastercard?", a:"RuPay", hint:"Launched by NPCI"},
+  {q:"What does PPI stand for in payments?", a:"Prepaid Payment Instrument", hint:"E-wallets fall here"},
+  {q:"Which regulator oversees payment systems in India?", a:"Reserve Bank of India (RBI)", hint:"Central bank of India"},
+  {q:"What is Aadhaar-enabled Payment System called?", a:"AePS", hint:"Uses biometric authentication"},
+  {q:"What does BBPS stand for?", a:"Bharat Bill Payment System", hint:"For utility bill payments"},
+  {q:"Which UPI feature allows offline payments via NFC?", a:"UPI Lite X", hint:"No internet needed"},
+  {q:"What is the settlement cycle for UPI transactions?", a:"T+1 (next business day)", hint:"Cleared by NPCI"},
+  {q:"Which payment mode is best for high-value same-day transfers above ₹2 lakh?", a:"RTGS", hint:"Real-time, minimum ₹2L"},
+  {q:"What does KYC stand for in banking/payments?", a:"Know Your Customer", hint:"Identity verification process"},
+  {q:"What is the credit product launched on UPI rails?", a:"UPI Credit Line / RuPay Credit on UPI", hint:"Link credit card to UPI"},
+  {q:"What does POS stand for in payment terminals?", a:"Point of Sale", hint:"The swipe machine at shops"},
+  {q:"Which payment app was India's first UPI-based app?", a:"BHIM", hint:"Bharat Interface for Money"},
+  {q:"What does FASTag use for toll collection?", a:"RFID (Radio Frequency Identification)", hint:"Stick on windshield"},
+  {q:"What is the name of India's cross-border UPI-equivalent initiative?", a:"UPI One World / Project Nexus", hint:"International expansion"},
+  {q:"What does EMI stand for?", a:"Equated Monthly Instalment", hint:"Loan repayment structure"},
+  {q:"Which entity issues a UPI Virtual Payment Address (VPA)?", a:"Payment Service Provider / Bank (PSP)", hint:"e.g. @okaxis, @ybl"},
+  {q:"What is the maximum wallet limit for a fully KYC-compliant PPI?", a:"₹2 lakh", hint:"RBI PPI Master Directions"},
+  {q:"Which payment rail is used for salary disbursement in bulk?", a:"NEFT or NACH (ECS)", hint:"Batch-based clearing"},
+  {q:"What does QR stand for in QR code payments?", a:"Quick Response", hint:"Invented in Japan, used in Bharat QR"},
+  {q:"What is Bharat QR?", a:"A unified QR standard for card and UPI payments", hint:"Interoperable across Visa, Mastercard, RuPay, UPI"},
+  {q:"What is the purpose of a payment aggregator (PA)?", a:"To collect payments on behalf of merchants and settle to their accounts", hint:"Regulated by RBI since 2020"},
+  {q:"What does TPAP stand for in UPI?", a:"Third Party Application Provider", hint:"e.g. PhonePe, Google Pay"},
+]);
+
 const MQTT_URL = "wss://broker.emqx.io:8084/mqtt"; // free public broker, no sign-up needed
 
 function BuzzerMode({ players, onAddScore }) {
@@ -917,6 +952,17 @@ function BuzzerMode({ players, onAddScore }) {
   const [showQR,  setShowQR]  = useState(true);
   const cdRef      = useRef(null);
   const lStartRef  = useRef(null);
+
+  // ── Question bank ─────────────────────────────────────────────
+  const qQueueRef  = useRef([...BUZZER_QUESTIONS]);
+  const [currentQ, setCurrentQ] = useState(null);
+  const [showAns,  setShowAns]  = useState(false);
+
+  function nextQuestion() {
+    if (qQueueRef.current.length === 0) qQueueRef.current = shuffle([...BUZZER_QUESTIONS]);
+    setCurrentQ(qQueueRef.current.pop());
+    setShowAns(false);
+  }
 
   // ── Scores ────────────────────────────────────────────────────
   const [scores, setScores] = useState(() =>
@@ -985,6 +1031,7 @@ function BuzzerMode({ players, onAddScore }) {
     S.swoosh();
     setWinner(null); setBuzzTime(null); setDisabled([]);
     winnerRef.current = null; disabledRef.current = [];
+    nextQuestion();
     setCdPhase(true); setCd(3);
     let c = 3;
     cdRef.current = setInterval(() => {
@@ -1037,6 +1084,7 @@ function BuzzerMode({ players, onAddScore }) {
     clearInterval(cdRef.current); setCdPhase(false);
     phaseRef.current = "idle"; winnerRef.current = null; disabledRef.current = [];
     setPhase("idle"); setWinner(null); setBuzzTime(null); setDisabled([]);
+    setShowAns(false);
     pubState("idle", null, null, []);
   }
 
@@ -1077,6 +1125,37 @@ function BuzzerMode({ players, onAddScore }) {
           </button>
         </div>
       </div>
+
+      {/* ── Question Card ── */}
+      {currentQ ? (
+        <div style={{...card("#ffe60018"),marginBottom:16,border:"2px solid #ffe60040",position:"relative"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <span style={{fontFamily:"Orbitron",fontSize:"0.52rem",color:"#ffe600",letterSpacing:"0.12em"}}>💳 INDIAN PAYMENTS — BUZZ TO ANSWER</span>
+            <button onClick={nextQuestion}
+              style={{...btn("#252e60",true),fontSize:"0.5rem",padding:"3px 10px"}}>SKIP →</button>
+          </div>
+          <div style={{fontFamily:"Rajdhani",fontSize:"1.15rem",fontWeight:700,color:"#e0eaff",lineHeight:1.55,marginBottom:12}}>
+            {currentQ.q}
+          </div>
+          {!showAns ? (
+            <button onClick={()=>setShowAns(true)}
+              style={{...btn("#ffe600",true),fontSize:"0.6rem",width:"100%"}}>
+              👁 REVEAL ANSWER
+            </button>
+          ) : (
+            <div style={{background:"#00ff9012",border:"1px solid #00ff9040",borderRadius:8,padding:"10px 14px"}}>
+              <div style={{fontFamily:"Orbitron",fontSize:"0.5rem",color:"#00ff90",letterSpacing:"0.1em",marginBottom:4}}>ANSWER</div>
+              <div style={{fontFamily:"Rajdhani",fontSize:"1.05rem",fontWeight:700,color:"#00ff90",marginBottom:6}}>{currentQ.a}</div>
+              {currentQ.hint&&<div style={{fontFamily:"Rajdhani",fontSize:"0.82rem",color:"#3a4570"}}>💡 {currentQ.hint}</div>}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{...card("#ffe60010"),marginBottom:16,textAlign:"center",padding:"18px 16px"}}>
+          <div style={{fontFamily:"Orbitron",fontSize:"0.6rem",color:"#3a4060",letterSpacing:"0.12em"}}>💳 INDIAN PAYMENTS ROUND</div>
+          <div style={{fontFamily:"Rajdhani",color:"#252e60",fontSize:"0.9rem",marginTop:8}}>Press ▶ START ROUND to load first question</div>
+        </div>
+      )}
 
       {/* Room code + QR panel */}
       {showQR && (
