@@ -282,7 +282,9 @@ const HUMAN_QUESTIONS = {
   "JavaScript": {question:"What does typeof null return in JavaScript?",options:["A. null","B. undefined","C. object","D. string"],correct:2,explanation:"typeof null returns 'object' — a famous JS bug kept for compatibility.",fun_fact:"Brendan Eich created JavaScript in just 10 days in 1995!"},
 };
 
-function QuizGame({ onAddScore, onDone }) {
+function QuizGame({ players, onAddScore, onDone }) {
+  const pList=players&&players.length>=1?players:[{id:1,name:"Team"}];
+  const PCOLS=["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7"];
   const [phase,setPhase]=useState("wheel");
   const [topic,setTopic]=useState(null);
   const [qData,setQData]=useState(null);
@@ -296,6 +298,7 @@ function QuizGame({ onAddScore, onDone }) {
   const [audData,setAudData]=useState(null);
   const [commentary,setCommentary]=useState("");
   const [cd,setCd]=useState(3);
+  const [activeTi,setActiveTi]=useState(0);
   const tref=useRef(); const TOTAL=5;
 
   async function loadQ(top){
@@ -323,7 +326,7 @@ Return exactly: {"question":"...","options":["A. ...","B. ...","C. ...","D. ..."
     if(sel!==null||phase!=="question") return;
     clearInterval(tref.current); setSel(i); setPhase("reveal");
     const ok=i===qData.correct;
-    if(ok){S.correct();const pts=Math.max(50,timer*10)+(streak>=2?50:0);onAddScore(pts);setStreak(s=>s+1);setConfetti(true);setTimeout(()=>setConfetti(false),2500);}
+    if(ok){S.correct();const pts=Math.max(50,timer*10)+(streak>=2?50:0);onAddScore(pts,activeTi);setStreak(s=>s+1);setConfetti(true);setTimeout(()=>setConfetti(false),2500);}
     else{S.wrong();setStreak(0);}
     const c=await ai("Excited game show host. ONE punchy sentence, max 12 words.",`Player ${ok?"correctly":"wrongly"} answered about ${topic}.`);
     setCommentary(c.replace(/"/g,""));
@@ -388,6 +391,22 @@ Return exactly: {"question":"...","options":["A. ...","B. ...","C. ...","D. ..."
               {phase==="question"&&<CTimer v={timer}/>}
             </div>
           </div>
+          {/* Team selector */}
+          {pList.length>1&&(
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+              <span style={{fontFamily:"Orbitron",fontSize:"0.48rem",color:"#252e60",letterSpacing:"0.1em"}}>TEAM:</span>
+              {pList.map((p,i)=>(
+                <button key={p.id} onClick={()=>setActiveTi(i)}
+                  style={{fontFamily:"Orbitron",fontSize:"0.52rem",padding:"4px 10px",borderRadius:4,
+                    border:`1px solid ${i===activeTi?PCOLS[i%PCOLS.length]:"#1a2040"}`,
+                    background:i===activeTi?PCOLS[i%PCOLS.length]+"18":"transparent",
+                    color:i===activeTi?PCOLS[i%PCOLS.length]:"#252e60",cursor:"pointer",
+                    boxShadow:i===activeTi?`0 0 8px ${PCOLS[i%PCOLS.length]}40`:"none"}}>
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
           {/* Lifelines */}
           {phase==="question"&&(
             <div style={{display:"flex",gap:8,marginBottom:14}}>
@@ -464,18 +483,19 @@ const HUMAN_BANK = {
   "Your hot take on JavaScript?":"It's chaotic and weird and I hate it but I also use it for literally everything so here we are.",
 };
 
-function AiOrHuman({ onAddScore, onDone }) {
+function AiOrHuman({ players, onAddScore, onDone }) {
+  const PCOLS=["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7"];
+  const pList=players&&players.length>=1?players:[{id:1,name:"Team"}];
   const [phase,setPhase]=useState("loading");
   const [sample,setSample]=useState(null);
-  const [choice,setChoice]=useState(null);
+  const [votes,setVotes]=useState({});   // { teamId: true/false }
   const [round,setRound]=useState(1);
-  const [score,setScore]=useState(0);
   const [confetti,setConfetti]=useState(false);
   const [rcd,setRcd]=useState(null);
   const TOTAL=4, prompts=Object.keys(HUMAN_BANK);
 
   async function load(){
-    setPhase("loading"); setChoice(null); setRcd(null);
+    setPhase("loading"); setVotes({}); setRcd(null);
     const isAI=Math.random()>0.5, p=prompts[(round-1)%prompts.length];
     if(isAI){const t=await ai("Answer casually under 55 words. Sound natural but slightly polished.",p);setSample({text:t.trim(),isAI:true,prompt:p});}
     else setSample({text:HUMAN_BANK[p],isAI:false,prompt:p});
@@ -483,12 +503,15 @@ function AiOrHuman({ onAddScore, onDone }) {
   }
   useEffect(()=>{load();},[round]);
 
-  function vote(g){
-    setChoice(g); S.tick();
-    let c=3; setRcd(c);
+  function setTeamVote(teamId,val){setVotes(v=>({...v,[teamId]:val}));}
+
+  function startReveal(){
+    S.tick(); let c=3; setRcd(c);
     const t=setInterval(()=>{ c--; setRcd(c); S.tick(); if(c<=0){
       clearInterval(t); setRcd(null); setPhase("reveal");
-      if(g===sample.isAI){onAddScore(80);setScore(s=>s+80);S.correct();setConfetti(true);setTimeout(()=>setConfetti(false),2500);}
+      let any=false;
+      pList.forEach((p,i)=>{ if(votes[p.id]===sample.isAI){onAddScore(80,i);any=true;} });
+      if(any){S.correct();setConfetti(true);setTimeout(()=>setConfetti(false),2500);}
       else S.wrong();
     }},1000);
   }
@@ -497,7 +520,6 @@ function AiOrHuman({ onAddScore, onDone }) {
     <div style={{textAlign:"center",padding:"40px 0"}}>
       <div style={{fontSize:"3rem",marginBottom:12}}>🤖</div>
       <div style={{fontFamily:"Orbitron",color:"#ff00c8",fontSize:"1.5rem",textShadow:"0 0 14px #ff00c8",marginBottom:8}}>Round Over!</div>
-      <div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"1.8rem",marginBottom:24}}><Count to={score}/> pts</div>
       <button style={btn("#ff00c8")} onClick={onDone}>VIEW FINAL RESULTS →</button>
     </div>
   );
@@ -507,10 +529,7 @@ function AiOrHuman({ onAddScore, onDone }) {
       <Confetti on={confetti}/>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <div style={{fontFamily:"Orbitron",color:"#ff00c8",fontSize:"0.9rem",textShadow:"0 0 10px #ff00c8"}}>🤖 AI or Human?</div>
-        <div style={{display:"flex",gap:12}}>
-          <span style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"0.8rem"}}>{score}pts</span>
-          <span style={{fontFamily:"Orbitron",color:"#252e60",fontSize:"0.65rem"}}>Round {round}/{TOTAL}</span>
-        </div>
+        <span style={{fontFamily:"Orbitron",color:"#252e60",fontSize:"0.65rem"}}>Round {round}/{TOTAL}</span>
       </div>
       {phase==="loading"&&<div style={{textAlign:"center",padding:"60px 0"}}>
         <div style={{width:40,height:40,border:"3px solid #1a2040",borderTopColor:"#ff00c8",borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 16px"}}/>
@@ -532,30 +551,58 @@ function AiOrHuman({ onAddScore, onDone }) {
             </div>
           )}
           {phase==="question"&&rcd===null&&(
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-              {[{label:"🤖 Written by AI",c:"#00f5ff",v:true},{label:"👤 Written by Human",c:"#ff00c8",v:false}].map(x=>(
-                <button key={x.label} onClick={()=>vote(x.v)}
-                  style={{...btn(x.c),width:"100%",padding:"22px 0",fontSize:"0.95rem",display:"block",lineHeight:1.6}}>
-                  {x.label}
-                </button>
-              ))}
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {pList.map((p,i)=>{
+                const col=PCOLS[i%PCOLS.length];
+                const voted=votes[p.id];
+                return(
+                  <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",
+                    borderRadius:8,border:`1px solid ${voted!==undefined?col+"60":"#1a2040"}`,background:"#0a0c18"}}>
+                    <span style={{fontFamily:"Orbitron",fontSize:"0.58rem",color:col,flex:"0 0 110px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
+                    <button onClick={()=>setTeamVote(p.id,true)}
+                      style={{...btn("#00f5ff",voted===true),fontSize:"0.62rem",padding:"6px 14px"}}>🤖 AI</button>
+                    <button onClick={()=>setTeamVote(p.id,false)}
+                      style={{...btn("#ff00c8",voted===false),fontSize:"0.62rem",padding:"6px 14px"}}>👤 Human</button>
+                    {voted!==undefined&&<span style={{color:col,fontSize:"0.7rem"}}>✓</span>}
+                  </div>
+                );
+              })}
+              {Object.keys(votes).length===pList.length&&(
+                <div style={{textAlign:"center",marginTop:8}}>
+                  <button style={{...btn("#ffe600"),fontSize:"0.9rem",padding:"14px 40px"}} onClick={startReveal}>⚡ REVEAL!</button>
+                </div>
+              )}
             </div>
           )}
           {phase==="reveal"&&(
-            <div style={{textAlign:"center",animation:"pop 0.5s cubic-bezier(0.34,1.56,0.64,1)"}}>
-              <div style={{...card(choice===sample.isAI?"#00ff9060":"#ff406060",choice===sample.isAI?"#00ff9015":"#ff406015"),
-                padding:"28px 20px",marginBottom:16}}>
-                <div style={{fontSize:"3.5rem",marginBottom:10}}>{choice===sample.isAI?"✅":"❌"}</div>
-                <div style={{fontFamily:"Orbitron",color:choice===sample.isAI?"#00ff90":"#ff4060",fontSize:"1.2rem",marginBottom:10}}>
-                  {choice===sample.isAI?"CORRECT! +80 pts 🎉":"WRONG!"}
-                </div>
-                <div style={{color:"#4050a0",fontSize:"0.95rem",fontFamily:"Rajdhani"}}>
-                  Written by <strong style={{color:sample.isAI?"#00f5ff":"#ff00c8"}}>{sample.isAI?"🤖 Claude AI":"👤 a Human"}</strong>
+            <div style={{animation:"pop 0.5s cubic-bezier(0.34,1.56,0.64,1)"}}>
+              <div style={{...card("#ff00c822"),padding:"18px 20px",marginBottom:14,textAlign:"center"}}>
+                <div style={{fontFamily:"Orbitron",color:sample.isAI?"#00f5ff":"#ff00c8",fontSize:"1.1rem",marginBottom:8}}>
+                  Written by {sample.isAI?"🤖 Claude AI":"👤 a Human"}
                 </div>
               </div>
-              <button style={btn(choice===sample.isAI?"#00ff90":"#ff00c8")} onClick={()=>{if(round>=TOTAL)setPhase("done");else setRound(r=>r+1);}}>
-                {round>=TOTAL?"🎉 Finish":"Next Round →"}
-              </button>
+              <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+                {pList.map((p,i)=>{
+                  const col=PCOLS[i%PCOLS.length];
+                  const correct=votes[p.id]===sample.isAI;
+                  return(
+                    <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",
+                      borderRadius:8,border:`1px solid ${correct?"#00ff9040":"#ff406040"}`,
+                      background:correct?"#00ff9010":"#ff406010"}}>
+                      <span style={{fontSize:"1.2rem"}}>{correct?"✅":"❌"}</span>
+                      <span style={{fontFamily:"Orbitron",fontSize:"0.6rem",color:col,flex:1}}>{p.name}</span>
+                      <span style={{fontFamily:"Orbitron",fontSize:"0.58rem",color:correct?"#00ff90":"#ff4060"}}>
+                        {correct?"+80 pts":"WRONG"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{textAlign:"center"}}>
+                <button style={btn("#ff00c8")} onClick={()=>{if(round>=TOTAL)setPhase("done");else setRound(r=>r+1);}}>
+                  {round>=TOTAL?"🎉 Finish":"Next Round →"}
+                </button>
+              </div>
             </div>
           )}
         </>
@@ -1072,7 +1119,7 @@ export default function App() {
   useEffect(()=>{ if(screen!=="intro") return; let i=0; const t=setInterval(()=>{i++;setIStep(i);if(i>=4)clearInterval(t);},700); return()=>clearInterval(t); },[screen]);
 
   function toast_(m,d=1600){setToast(m);setTimeout(()=>setToast(null),d);}
-  function addS1(pts){setPlayers(ps=>ps.map((p,i)=>i===0?{...p,score:p.score+pts}:p));if(pts>0)toast_(`+${pts} pts! 🎉`);}
+  function addS1(pts,ti=0){setPlayers(ps=>ps.map((p,i)=>i===ti?{...p,score:p.score+pts}:p));if(pts>0)toast_(`+${pts} pts! 🎉`);}
   function addS2(winnerIdx){setPlayers(ps=>ps.map((p,i)=>i===winnerIdx?{...p,score:p.score+100}:p));toast_("🏆 +100 pts! 🎉");}
   function addSB(pts,playerId){setPlayers(ps=>ps.map(p=>p.id===playerId?{...p,score:p.score+pts}:p));}
   function addPlayer(){if(!newName.trim())return;setPlayers(ps=>[...ps,{id:Date.now(),name:newName.trim(),score:0}]);setNewName("");toast_("Added! ✓");}
@@ -1241,8 +1288,8 @@ export default function App() {
                 </div>
                 <button onClick={()=>go("hub")} style={{...btn("#00f5ff",true),fontSize:"0.58rem"}}>← HUB</button>
               </div>
-              {screen==="quiz"&&<QuizGame onAddScore={addS1} onDone={finale}/>}
-              {screen==="aiorhuman"&&<AiOrHuman onAddScore={addS1} onDone={finale}/>}
+              {screen==="quiz"&&<QuizGame players={players} onAddScore={addS1} onDone={finale}/>}
+              {screen==="aiorhuman"&&<AiOrHuman players={players} onAddScore={addS1} onDone={finale}/>}
               {screen==="battle"&&<PromptBattle players={players} onAddScore={addS2} onDone={finale}/>}
               {screen==="buzzer"&&<BuzzerMode players={players} onAddScore={addSB} onDone={()=>go("hub")}/>}
               {/* Reaction bar */}
