@@ -36,15 +36,108 @@ const S = {
   ding()    { [1047,1319,1568].forEach((f,i) => setTimeout(() => this.t(f, 0.12, "sine", 0.18), i*70)); },
 };
 
-// ── CLAUDE API ────────────────────────────────────────────────
-async function ai(sys, usr) {
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: sys, messages: [{ role: "user", content: usr }] }),
-  });
-  const d = await r.json();
-  return d.content?.[0]?.text || "";
-}
+// ── QUIZ BANK ─────────────────────────────────────────────────
+const QUIZ_BANK = {
+  "JavaScript":[
+    {question:"What does `typeof null` return in JavaScript?",options:["A. null","B. object","C. undefined","D. string"],correct:1,explanation:"`typeof null` returns 'object' — a famous JavaScript bug kept for backward compatibility.",fun_fact:"Brendan Eich created JavaScript in just 10 days in 1995!"},
+    {question:"Which array method removes the LAST element?",options:["A. shift()","B. splice()","C. pop()","D. slice()"],correct:2,explanation:"`pop()` removes and returns the last element. `shift()` removes the first.",fun_fact:"JavaScript arrays are objects under the hood — hence their quirky behaviors!"},
+    {question:"What does `===` check in JavaScript?",options:["A. Value only","B. Type only","C. Value AND type","D. Reference equality"],correct:2,explanation:"`===` is strict equality — checks both value AND type without coercion.",fun_fact:"Using `==` instead can cause bugs: `0 == '0'` is true but `0 === '0'` is false!"},
+    {question:"What is a closure in JavaScript?",options:["A. A way to end loops","B. A function that retains its outer scope","C. An error handler","D. A module pattern"],correct:1,explanation:"A closure is a function that 'closes over' variables from its outer scope, retaining access even after the outer function returns.",fun_fact:"Closures are the foundation of JavaScript module patterns and private variables!"},
+    {question:"What does the `async` keyword do to a function?",options:["A. Makes it run faster","B. Makes it return a Promise","C. Runs it in a Web Worker","D. Disables error handling"],correct:1,explanation:"An `async` function always returns a Promise, enabling use of `await` inside it.",fun_fact:"Node.js I/O is non-blocking, making async/await especially powerful there!"},
+    {question:"Which method creates a new array with transformed elements?",options:["A. filter()","B. reduce()","C. forEach()","D. map()"],correct:3,explanation:"`map()` returns a new array with the result of calling a function on each element.",fun_fact:"Functional array methods like map/filter/reduce come from Functional Programming concepts!"},
+  ],
+  "Python":[
+    {question:"Which keyword defines a function in Python?",options:["A. function","B. fun","C. def","D. fn"],correct:2,explanation:"`def` is Python's keyword for defining functions — short for 'define'.",fun_fact:"Python was named after Monty Python's Flying Circus, not the snake!"},
+    {question:"What does `//` do in Python?",options:["A. Comment a line","B. Floor division","C. Exponentiation","D. String concat"],correct:1,explanation:"`//` is floor (integer) division — e.g. `7 // 2 = 3`, rounding down.",fun_fact:"Python also has `**` for exponentiation: `2 ** 10 = 1024`!"},
+    {question:"Which is NOT a valid Python data type?",options:["A. list","B. tuple","C. array","D. dict"],correct:2,explanation:"`array` is not a built-in Python data type — you'd use `list` or import NumPy's ndarray.",fun_fact:"Python's list is actually a dynamic array internally — resizing as needed!"},
+    {question:"What does `len([1,2,3,4,5])` return?",options:["A. 4","B. 5","C. 6","D. 0"],correct:1,explanation:"`len()` returns the number of elements. The list has 5 elements → returns 5.",fun_fact:"Python's `len()` works on strings, lists, dicts, tuples, and more!"},
+    {question:"What is a list comprehension?",options:["A. A class method","B. A concise way to create lists","C. A loop optimization","D. A sorting algorithm"],correct:1,explanation:"List comprehensions like `[x*2 for x in range(5)]` create lists concisely in one line.",fun_fact:"List comprehensions are up to 35% faster than equivalent for-loops in Python!"},
+    {question:"What does the `*args` parameter allow in Python?",options:["A. Only one argument","B. Variable number of positional arguments","C. Keyword arguments only","D. Type-checked arguments"],correct:1,explanation:"`*args` collects any number of positional arguments into a tuple.",fun_fact:"You can unpack lists into function calls with `*`: `print(*[1,2,3])` prints `1 2 3`!"},
+  ],
+  "AI & ML":[
+    {question:"What does LLM stand for?",options:["A. Large Language Model","B. Linear Learning Machine","C. Layered Logic Module","D. Lightweight Language Metric"],correct:0,explanation:"LLM = Large Language Model — AI systems trained on massive text data, like GPT and Claude.",fun_fact:"GPT-4 was trained on roughly 1 trillion tokens — more words than a human reads in thousands of lifetimes!"},
+    {question:"What is 'overfitting' in machine learning?",options:["A. Model is too simple","B. Model memorizes training data but fails on new data","C. Too much training data","D. Model runs too slow"],correct:1,explanation:"Overfitting happens when a model learns training data too well, including noise, so it can't generalize.",fun_fact:"Regularization techniques like dropout were invented specifically to fight overfitting!"},
+    {question:"What does 'training' a model mean?",options:["A. Writing its code","B. Adjusting weights on data to minimize error","C. Running it on a GPU","D. Deploying it to production"],correct:1,explanation:"Training adjusts the model's parameters (weights) iteratively to reduce prediction error on training data.",fun_fact:"GPT-3 required roughly 3,640 petaflop/s-days of compute to train!"},
+    {question:"What is the 'transformer' in AI models like GPT?",options:["A. A power adapter","B. An architecture using attention mechanisms","C. A data pipeline","D. A compression algorithm"],correct:1,explanation:"The Transformer architecture (2017) uses 'attention' to weigh word relationships, enabling modern LLMs.",fun_fact:"The paper 'Attention is All You Need' introduced Transformers — arguably the most impactful AI paper of the decade!"},
+    {question:"What does 'neural network' mean?",options:["A. A type of internet protocol","B. Layers of interconnected nodes inspired by the human brain","C. A database structure","D. A security framework"],correct:1,explanation:"Neural networks mimic biological neurons — layers of nodes with weighted connections that learn patterns.",fun_fact:"The human brain has ~86 billion neurons. The largest AI models have ~1 trillion parameters!"},
+    {question:"What is 'prompt engineering'?",options:["A. Hardware optimization","B. Crafting inputs to guide AI output","C. Training a model","D. Deploying AI to cloud"],correct:1,explanation:"Prompt engineering is the skill of writing effective inputs to get desired outputs from AI models.",fun_fact:"A well-crafted prompt can improve AI accuracy by over 50% on complex reasoning tasks!"},
+  ],
+  "Cloud":[
+    {question:"What does SaaS stand for?",options:["A. Software as a Service","B. System as a Stack","C. Storage as a Solution","D. Server as a Service"],correct:0,explanation:"SaaS delivers software over the internet on subscription — like Gmail, Slack, or Salesforce.",fun_fact:"The global SaaS market is projected to exceed $900 billion by 2030!"},
+    {question:"Which AWS service is used for serverless functions?",options:["A. EC2","B. S3","C. Lambda","D. RDS"],correct:2,explanation:"AWS Lambda runs code in response to events without managing servers — true serverless compute.",fun_fact:"AWS Lambda functions can scale from 0 to thousands of concurrent executions in seconds!"},
+    {question:"What does CDN stand for?",options:["A. Cloud Data Node","B. Content Delivery Network","C. Central DNS Name","D. Cached Data Network"],correct:1,explanation:"A CDN distributes content across servers worldwide so users load it from a nearby location — reducing latency.",fun_fact:"Cloudflare's CDN now serves about 20% of all internet traffic!"},
+    {question:"What is auto-scaling in cloud?",options:["A. Automatic OS updates","B. Adjusting compute resources based on load","C. Scaling database rows","D. Auto-backup of files"],correct:1,explanation:"Auto-scaling automatically adds or removes resources based on demand — scaling up under load, down when idle.",fun_fact:"Netflix uses AWS auto-scaling to handle 200+ million subscribers without managing a single server!"},
+    {question:"What is the main advantage of microservices?",options:["A. Everything in one codebase","B. Each service is independently deployable and scalable","C. Faster to build initially","D. No network calls needed"],correct:1,explanation:"Microservices split apps into small, independent services — each can be deployed, scaled, and updated separately.",fun_fact:"Amazon decomposed its monolith into microservices in 2001, becoming the foundation of AWS!"},
+    {question:"What does 'IaC' mean in DevOps?",options:["A. Integration as Code","B. Infrastructure as Code","C. Instance and Cluster","D. Input and Configuration"],correct:1,explanation:"IaC manages cloud infrastructure through code (like Terraform or CloudFormation) instead of manual setup.",fun_fact:"IaC reduces infrastructure deployment time from weeks to minutes!"},
+  ],
+  "React":[
+    {question:"Which hook manages state in React functional components?",options:["A. useEffect","B. useRef","C. useState","D. useContext"],correct:2,explanation:"`useState` returns a state value and a setter function — calling the setter triggers a re-render.",fun_fact:"Before hooks (React 16.8), you needed class components for any stateful logic!"},
+    {question:"What does JSX stand for?",options:["A. JavaScript XML","B. Java Syntax Extension","C. JSON XML","D. JavaScript Extra"],correct:0,explanation:"JSX is a syntax extension that lets you write HTML-like code inside JavaScript — Babel compiles it to `React.createElement()`.",fun_fact:"JSX is entirely optional — React can be used without it, but most developers prefer it!"},
+    {question:"What does `useEffect` with an empty `[]` dependency array do?",options:["A. Runs on every render","B. Runs only once after mount","C. Runs before render","D. Never runs"],correct:1,explanation:"An empty dependency array `[]` means the effect runs once after the component mounts — like `componentDidMount`.",fun_fact:"Forgetting dependencies in `useEffect` is one of the most common React bugs!"},
+    {question:"What is the Virtual DOM?",options:["A. A fake browser environment","B. A lightweight in-memory copy of the real DOM","C. A CSS rendering engine","D. A JavaScript runtime"],correct:1,explanation:"React's Virtual DOM is an in-memory representation — React diffs it against the real DOM and only updates what changed.",fun_fact:"React's Virtual DOM reconciliation was revolutionary in 2013 when React was released!"},
+    {question:"What does lifting state up mean in React?",options:["A. Putting state in localStorage","B. Moving state to a parent component","C. Using Redux","D. Calling setState faster"],correct:1,explanation:"When sibling components need to share state, you move (lift) that state to their closest common ancestor.",fun_fact:"Lifting state is often the first step before reaching for Redux or Context API!"},
+    {question:"What is React's key prop used for?",options:["A. Encryption","B. Styling list items","C. Helping React identify which items changed in a list","D. Event handling"],correct:2,explanation:"The `key` prop helps React efficiently reconcile lists — it identifies which items were added, changed, or removed.",fun_fact:"Using array index as key is an anti-pattern — it can cause subtle bugs when lists reorder!"},
+  ],
+  "Databases":[
+    {question:"What does SQL stand for?",options:["A. Structured Query Language","B. Simple Queue Logic","C. System Query List","D. Stored Query Layer"],correct:0,explanation:"SQL = Structured Query Language — the standard language for managing relational databases.",fun_fact:"SQL was invented at IBM in the 1970s and is still the most used database language today!"},
+    {question:"Which of these is NOT a NoSQL database?",options:["A. MongoDB","B. Redis","C. MySQL","D. Cassandra"],correct:2,explanation:"MySQL is a relational (SQL) database. MongoDB, Redis, and Cassandra are all NoSQL databases.",fun_fact:"NoSQL databases were popularized in the 2000s by companies like Google, Amazon, and Facebook!"},
+    {question:"What does ACID stand for in databases?",options:["A. Atomicity, Consistency, Isolation, Durability","B. Access, Control, Index, Data","C. Async, Cache, Integrity, Deploy","D. Application, Config, Index, Deploy"],correct:0,explanation:"ACID properties guarantee reliable database transactions even in case of errors or crashes.",fun_fact:"Banks rely on ACID compliance to ensure your money never disappears during a failed transaction!"},
+    {question:"Which SQL keyword removes duplicate rows from results?",options:["A. UNIQUE","B. DISTINCT","C. FILTER","D. REMOVE"],correct:1,explanation:"`SELECT DISTINCT column FROM table` returns only unique values, removing duplicates.",fun_fact:"The DISTINCT keyword can significantly slow queries on large tables without proper indexing!"},
+    {question:"What is a database index?",options:["A. A table's row count","B. A data structure that speeds up row retrieval","C. A backup file","D. A schema constraint"],correct:1,explanation:"An index is like a book's index — it lets the database find rows quickly without scanning every row.",fun_fact:"A well-placed index can reduce query time from minutes to milliseconds on large tables!"},
+    {question:"What is the purpose of a foreign key?",options:["A. Encrypting data","B. Linking rows between two tables","C. Speeding up queries","D. Counting records"],correct:1,explanation:"A foreign key creates a link between rows in two tables, enforcing referential integrity.",fun_fact:"Forgetting foreign key constraints is a classic cause of orphaned records in production databases!"},
+  ],
+  "Cyber Security":[
+    {question:"What does HTTPS stand for?",options:["A. Hyper Text Transfer Protocol Secure","B. High Transfer Protocol System","C. Hyper Text Transport Protocol Standard","D. Host Transfer Protocol Secure"],correct:0,explanation:"HTTPS encrypts data between browser and server using TLS — the padlock icon in your browser.",fun_fact:"By 2023, over 95% of traffic on Chrome loads over HTTPS!"},
+    {question:"What is phishing?",options:["A. A type of firewall","B. Tricking users into revealing sensitive info","C. An encryption algorithm","D. A network scanning tool"],correct:1,explanation:"Phishing uses fake emails or sites to trick people into giving up passwords, credit cards, or other sensitive data.",fun_fact:"90% of data breaches start with a phishing attack!"},
+    {question:"What does 2FA stand for?",options:["A. Two-Factor Authentication","B. Two-File Access","C. Twice-Fast Authorization","D. Two-Form Approval"],correct:0,explanation:"2FA requires two proofs of identity — e.g. password + SMS code — making accounts much harder to compromise.",fun_fact:"Accounts with 2FA are 99.9% less likely to be compromised, according to Microsoft!"},
+    {question:"What is a SQL Injection attack?",options:["A. Overloading a server","B. Inserting malicious SQL into input fields to manipulate the database","C. Brute-forcing passwords","D. Stealing cookies"],correct:1,explanation:"SQL injection tricks apps into running attacker-supplied SQL, potentially exposing or deleting all data.",fun_fact:"SQL injection has been the #1 web vulnerability in OWASP's top 10 for many years!"},
+    {question:"What is a VPN?",options:["A. A type of virus","B. An encrypted tunnel for internet traffic","C. A password manager","D. A firewall system"],correct:1,explanation:"A VPN (Virtual Private Network) encrypts your internet traffic and masks your IP address.",fun_fact:"VPN usage surged 150% in 2020 as millions switched to remote work!"},
+    {question:"What is the best practice for storing passwords?",options:["A. Plain text","B. Base64 encoded","C. Hashed with bcrypt or Argon2","D. AES encrypted"],correct:2,explanation:"Passwords must be hashed (not encrypted) using slow algorithms like bcrypt — making brute-force attacks impractical.",fun_fact:"The 2012 LinkedIn breach exposed 117M passwords stored with weak SHA-1 — most were cracked in days!"},
+  ],
+  "Git & DevOps":[
+    {question:"Which command creates a new Git branch?",options:["A. git new branch","B. git branch <name>","C. git fork","D. git create"],correct:1,explanation:"`git branch <name>` creates a new branch. Use `git checkout -b <name>` to create and switch in one step.",fun_fact:"Git was created by Linus Torvalds in 2005 to manage the Linux kernel source code!"},
+    {question:"What does CI/CD stand for?",options:["A. Code Integration/Code Deployment","B. Continuous Integration/Continuous Delivery","C. Complete Install/Complete Deploy","D. Cloud Integration/Cloud Delivery"],correct:1,explanation:"CI/CD automates building, testing, and deploying code — enabling teams to ship faster with confidence.",fun_fact:"Top tech companies deploy code hundreds of times per day using CI/CD pipelines!"},
+    {question:"What does `git stash` do?",options:["A. Deletes uncommitted changes","B. Pushes to remote","C. Saves uncommitted changes temporarily","D. Merges branches"],correct:2,explanation:"`git stash` saves your work-in-progress without committing, so you can switch branches cleanly.",fun_fact:"You can have multiple stashes and apply them selectively with `git stash list`!"},
+    {question:"What is Docker used for?",options:["A. Version control","B. Database management","C. Containerizing applications","D. Load balancing"],correct:2,explanation:"Docker packages apps with all dependencies into containers — ensuring consistent behavior across environments.",fun_fact:"Docker was released in 2013 and now has over 7 million images on Docker Hub!"},
+    {question:"What does `git rebase` do?",options:["A. Merges two branches","B. Rewrites commit history by replaying commits onto another branch","C. Reverts the last commit","D. Creates a branch"],correct:1,explanation:"`git rebase` moves or replays commits onto a new base — creating a cleaner linear history than merge.",fun_fact:"Git rebase is powerful but can cause problems if used on shared/public branches!"},
+    {question:"What is the purpose of a `.gitignore` file?",options:["A. Lists required dependencies","B. Specifies files Git should not track","C. Defines CI/CD pipelines","D. Configures git username"],correct:1,explanation:"`.gitignore` tells Git to ignore specified files/folders — like `node_modules`, `.env`, or build artifacts.",fun_fact:"GitHub provides `.gitignore` templates for hundreds of languages and frameworks!"},
+  ],
+};
+function shuffle(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+// ── AI OR HUMAN BANK ──────────────────────────────────────────
+const AH_BANK=[
+  {prompt:"What's one thing you love about coding?",text:"Honestly? When something finally works after 3 hours of debugging. That dopamine hit is unreal lol",isAI:false},
+  {prompt:"What's one thing you love about coding?",text:"The elegance of transforming abstract logic into something tangible — where a few precise keystrokes can automate what once took hours.",isAI:true},
+  {prompt:"Describe AI in one sentence",text:"It's autocomplete on steroids that somehow got a job, a personality, and opinions about everything.",isAI:false},
+  {prompt:"Describe AI in one sentence",text:"AI is the science of enabling machines to perform tasks that typically require human intelligence, like understanding language or recognizing patterns.",isAI:true},
+  {prompt:"Best advice for a junior developer?",text:"Google everything. No seriously, even seniors google basic stuff daily. The skill is knowing WHAT to search.",isAI:false},
+  {prompt:"Best advice for a junior developer?",text:"Focus on fundamentals over frameworks — understanding why code works matters far more than memorizing syntax.",isAI:true},
+  {prompt:"Your hot take on JavaScript?",text:"It's chaotic and weird and I hate it but I also use it for literally everything so here we are.",isAI:false},
+  {prompt:"Your hot take on JavaScript?",text:"JavaScript's quirky type coercion gets unfair criticism — its flexibility is precisely what made it the universal language of the web.",isAI:true},
+  {prompt:"How would you explain Git to a 5-year-old?",text:"It's like a save button that remembers EVERYTHING, and lets you undo anything. But also lets your friends save too without breaking yours.",isAI:false},
+  {prompt:"How would you explain Git to a 5-year-old?",text:"Git is like a magical notebook that saves every version of your work, so you can always go back to any earlier version whenever you want.",isAI:true},
+  {prompt:"What's the most overused buzzword in tech?",text:"Synergy. Or AI-powered. Or disruption. All three, sometimes in the same sentence, usually from someone who's never written code.",isAI:false},
+  {prompt:"What's the most overused buzzword in tech?",text:"Without question, 'disruptive innovation' — a phrase that once meant something but now precedes every product announcement regardless of actual novelty.",isAI:true},
+  {prompt:"What would you tell your past self starting to code?",text:"Stop trying to memorize syntax and just build stuff. The docs will always be there. Your motivation won't.",isAI:false},
+  {prompt:"What would you tell your past self starting to code?",text:"Embrace confusion as a signal of growth rather than failure — every senior developer you admire was once exactly where you are now.",isAI:true},
+  {prompt:"Describe debugging in one sentence",text:"Adding console.log everywhere and whispering 'why' until something makes sense, then deleting them all and hoping nothing breaks.",isAI:false},
+  {prompt:"Describe debugging in one sentence",text:"Debugging is detective work — you form hypotheses, test them systematically, and discover that your assumptions, not the code, were usually wrong.",isAI:true},
+  {prompt:"What do you think about no-code tools?",text:"Great for people who need to ship fast. Terrifying for devs who now need to explain why they spent 3 days on something Webflow does in 20 minutes.",isAI:false},
+  {prompt:"What do you think about no-code tools?",text:"No-code tools democratize software creation admirably, but introduce abstraction layers that can obscure logic and limit customization at scale.",isAI:true},
+  {prompt:"What's your opinion on code comments?",text:"Write comments for future-you who has no idea why you made that weird decision at 2am. Future-you will thank present-you.",isAI:false},
+  {prompt:"What's your opinion on code comments?",text:"The best code is self-documenting, but comments shine when explaining the 'why' behind non-obvious decisions that would otherwise confuse future maintainers.",isAI:true},
+  {prompt:"What does 'good code' mean to you?",text:"Code that junior devs can read without a 30-minute explanation. If you need to explain it, it's probably not that good.",isAI:false},
+  {prompt:"What does 'good code' mean to you?",text:"Good code is readable, testable, and does exactly one thing well — its elegance lies not in complexity but in how little explanation it needs.",isAI:true},
+  {prompt:"Describe your perfect tech stack",text:"Whatever works and doesn't wake me up at 3am. But if forced: Next.js, Postgres, Tailwind, and unlimited coffee.",isAI:false},
+  {prompt:"Describe your perfect tech stack",text:"An ideal stack balances developer experience with production reliability — TypeScript for safety, React for UI, Node for APIs, PostgreSQL for data.",isAI:true},
+  {prompt:"Rate Python out of 10",text:"9/10. Would be 10 but the whitespace thing still haunts me after switching from JS. Also pip is a mess sometimes ngl.",isAI:false},
+  {prompt:"Rate Python out of 10",text:"Python earns a solid 8/10 — its readable syntax democratizes programming, though performance limitations keep it from perfection in compute-heavy tasks.",isAI:true},
+  {prompt:"Give your take on remote work for developers",text:"Productivity depends on whether your flatmates also work from home. Mine don't. It's a daily negotiation with distractions.",isAI:false},
+  {prompt:"Give your take on remote work for developers",text:"Remote work empowers developers with deep-focus time that open offices rarely allow, though it demands intentional communication to replace spontaneous collaboration.",isAI:true},
+  {prompt:"What's cloud computing in simple terms?",text:"It's someone else's computer that you pay for monthly and cry about when the bill comes.",isAI:false},
+  {prompt:"What's cloud computing in simple terms?",text:"Cloud computing delivers on-demand computing resources over the internet, enabling scalability and flexibility without managing physical infrastructure.",isAI:true},
+];
 
 // ── CSS ───────────────────────────────────────────────────────
 const CSS = `
@@ -296,19 +389,17 @@ function QuizGame({ players, onAddScore, onDone }) {
   const [elim,setElim]=useState([]);
   const [ll,setLL]=useState({fifty:true,audience:true});
   const [audData,setAudData]=useState(null);
-  const [commentary,setCommentary]=useState("");
   const [cd,setCd]=useState(3);
   const [activeTi,setActiveTi]=useState(0);
-  const tref=useRef(); const TOTAL=5;
+  const tref=useRef(); const queueRef=useRef(null); const TOTAL=5;
 
-  async function loadQ(top){
-    setPhase("loading"); setSel(null); setElim([]); setAudData(null); setCommentary("");
-    const diff=qNum<=2?"easy":qNum<=4?"medium":"hard";
-    const raw=await ai("Tech quiz master. Return ONLY valid JSON no markdown.",
-      `Create a ${diff} tech question about ${top}.
-Return exactly: {"question":"...","options":["A. ...","B. ...","C. ...","D. ..."],"correct":0,"explanation":"one line","fun_fact":"one surprising fact"}`);
-    try{ setQData(JSON.parse(raw.replace(/```json|```/g,"").trim())); }
-    catch{ setQData({question:`Which of these is NOT a feature of ${top}?`,options:["A. Scalability","B. Flexibility","C. Immutability (always)","D. Community support"],correct:2,explanation:`${top} can be used in many flexible ways.`,fun_fact:`${top} is used by millions of developers worldwide.`}); }
+  function loadQ(top){
+    setPhase("loading"); setSel(null); setElim([]); setAudData(null);
+    if(!queueRef.current||queueRef.current.topic!==top){
+      queueRef.current={topic:top,queue:shuffle(QUIZ_BANK[top]||QUIZ_BANK["JavaScript"])};
+    }
+    const q=queueRef.current.queue.pop()||(QUIZ_BANK[top]||QUIZ_BANK["JavaScript"])[0];
+    setQData(q);
     setPhase("countdown"); setCd(3);
     let c=3;
     const ct=setInterval(()=>{ c--; setCd(c); S.tick(); if(c<=0){clearInterval(ct);setPhase("question");setTimer(20);} },1000);
@@ -322,14 +413,12 @@ Return exactly: {"question":"...","options":["A. ...","B. ...","C. ...","D. ..."
     return()=>clearInterval(tref.current);
   },[phase]);
 
-  async function pick(i){
+  function pick(i){
     if(sel!==null||phase!=="question") return;
     clearInterval(tref.current); setSel(i); setPhase("reveal");
     const ok=i===qData.correct;
     if(ok){S.correct();const pts=Math.max(50,timer*10)+(streak>=2?50:0);onAddScore(pts,activeTi);setStreak(s=>s+1);setConfetti(true);setTimeout(()=>setConfetti(false),2500);}
     else{S.wrong();setStreak(0);}
-    const c=await ai("Excited game show host. ONE punchy sentence, max 12 words.",`Player ${ok?"correctly":"wrongly"} answered about ${topic}.`);
-    setCommentary(c.replace(/"/g,""));
   }
 
   function lifeline(type){
@@ -459,7 +548,6 @@ Return exactly: {"question":"...","options":["A. ...","B. ...","C. ...","D. ..."
                 {sel===qData.correct?`✓ Correct! +${Math.max(50,timer*10)+(streak>2?50:0)} pts${streak>2?" 🔥":""}`:
                   `✗ Answer: ${qData.options?.[qData.correct]?.replace(/^[A-D]\.\s*/,"")}`}
               </div>
-              {commentary&&<div style={{color:"#4a5080",fontSize:"0.88rem",fontStyle:"italic",marginBottom:8}}>"<Type text={commentary} speed={28}/>"</div>}
               <div style={{color:"#3040a0",fontSize:"0.85rem",marginBottom:8}}>{qData.explanation}</div>
               {qData.fun_fact&&<div style={{color:"#3a4570",fontSize:"0.82rem",borderTop:"1px solid #1a2040",paddingTop:10}}>💡 {qData.fun_fact}</div>}
               <div style={{textAlign:"right",marginTop:14}}>
@@ -476,12 +564,6 @@ Return exactly: {"question":"...","options":["A. ...","B. ...","C. ...","D. ..."
 }
 
 // ── AI OR HUMAN ───────────────────────────────────────────────
-const HUMAN_BANK = {
-  "What's one thing you love about coding?":"Honestly? When something finally works after 3 hours of debugging. That dopamine hit is unreal lol",
-  "Describe AI in one sentence":"It's autocomplete on steroids that somehow got a job, a personality, and opinions about everything.",
-  "Best advice for a junior developer?":"Google everything. No seriously, even seniors google basic stuff daily. The skill is knowing WHAT to search.",
-  "Your hot take on JavaScript?":"It's chaotic and weird and I hate it but I also use it for literally everything so here we are.",
-};
 
 function AiOrHuman({ players, onAddScore, onDone }) {
   const PCOLS=["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7"];
@@ -492,13 +574,14 @@ function AiOrHuman({ players, onAddScore, onDone }) {
   const [round,setRound]=useState(1);
   const [confetti,setConfetti]=useState(false);
   const [rcd,setRcd]=useState(null);
-  const TOTAL=4, prompts=Object.keys(HUMAN_BANK);
+  const TOTAL=4;
+  const queueRef=useRef(null);
 
-  async function load(){
+  function load(){
     setPhase("loading"); setVotes({}); setRcd(null);
-    const isAI=Math.random()>0.5, p=prompts[(round-1)%prompts.length];
-    if(isAI){const t=await ai("Answer casually under 55 words. Sound natural but slightly polished.",p);setSample({text:t.trim(),isAI:true,prompt:p});}
-    else setSample({text:HUMAN_BANK[p],isAI:false,prompt:p});
+    if(!queueRef.current||queueRef.current.length===0) queueRef.current=shuffle([...AH_BANK]);
+    const s=queueRef.current.pop();
+    setSample(s);
     setPhase("question");
   }
   useEffect(()=>{load();},[round]);
@@ -613,10 +696,36 @@ function AiOrHuman({ players, onAddScore, onDone }) {
 
 // ── PROMPT BATTLE ─────────────────────────────────────────────
 const BATTLES=[
-  {task:"Get the most creative AI startup name in ONE sentence",icon:"🚀"},
-  {task:"Get Claude to explain Machine Learning using ONLY a food analogy",icon:"🍕"},
-  {task:"Get the funniest one-liner about debugging code",icon:"😂"},
-  {task:"Get Claude to hype CHITTI TECH ARENA annual function in under 20 words",icon:"🎉"},
+  {task:"Write the most creative tech startup pitch in ONE sentence",icon:"🚀"},
+  {task:"Explain Machine Learning using ONLY a food analogy",icon:"🍕"},
+  {task:"Write the funniest one-liner about debugging code",icon:"😂"},
+  {task:"Hype CHITTI TECH ARENA annual function in under 20 words",icon:"🎉"},
+  {task:"Explain the internet to someone from the 1800s in 2 sentences",icon:"🕰️"},
+  {task:"Write a job description for an AI that replaces you",icon:"🤖"},
+  {task:"Describe your coding style using only movie titles",icon:"🎬"},
+  {task:"Convince someone that Python is better than JavaScript (or vice versa)",icon:"⚔️"},
+  {task:"Write a horror story about a production server going down in 3 sentences",icon:"😱"},
+  {task:"Explain what a bug is using a cooking disaster analogy",icon:"🍳"},
+  {task:"Write the worst possible variable name and defend it",icon:"💀"},
+  {task:"Pitch 'Git' to someone who has never heard of version control",icon:"📝"},
+  {task:"Write a motivational speech for a developer with imposter syndrome",icon:"💪"},
+  {task:"Describe a senior developer vs junior developer using animals",icon:"🐘"},
+  {task:"Write a breakup letter from a developer to their old tech stack",icon:"💔"},
+  {task:"Explain recursion using a real-life scenario (no code!)",icon:"🔄"},
+  {task:"Write a product review for coffee from a developer's perspective",icon:"☕"},
+  {task:"Create a team name and motto for a hackathon team",icon:"🏆"},
+  {task:"Explain why dark mode is superior in exactly 3 reasons",icon:"🌙"},
+  {task:"Write a tweet announcing you just fixed a 3-day bug",icon:"🐦"},
+  {task:"Describe cloud computing using a weather metaphor",icon:"⛅"},
+  {task:"Write a haiku about a null pointer exception",icon:"🎋"},
+  {task:"Pitch the idea of 'naps at work' to a CEO using productivity data (made up is fine)",icon:"😴"},
+  {task:"Write an apology letter from JavaScript to all developers",icon:"📜"},
+  {task:"Describe what happens when you push to main by accident in 2 sentences",icon:"🔥"},
+  {task:"Give advice on work-life balance as if you're a senior developer",icon:"⚖️"},
+  {task:"Write a rap verse about CSS not working as expected",icon:"🎤"},
+  {task:"Describe AI using ONLY emojis (10 emojis max)",icon:"✨"},
+  {task:"Write the best out-of-office email a developer could send",icon:"🏖️"},
+  {task:"Explain what 'it works on my machine' means to a non-developer",icon:"🖥️"},
 ];
 
 function PromptBattle({ players, onAddScore, onDone }) {
@@ -624,29 +733,22 @@ function PromptBattle({ players, onAddScore, onDone }) {
   const pList=players&&players.length>=2?players:[{id:1,name:"Player 1"},{id:2,name:"Player 2"}];
   const [phase,setPhase]=useState("submit");
   const [prompts,setPrompts]=useState(()=>pList.map(()=>""));
-  const [res,setRes]=useState(null); const [round,setRound]=useState(0);
+  const [winner,setWinner]=useState(null);
+  const [round,setRound]=useState(0);
   const [confetti,setConfetti]=useState(false);
-  const ch=BATTLES[round%BATTLES.length];
+  const chQueue=useRef(shuffle([...BATTLES]));
+  const ch=chQueue.current[round%chQueue.current.length];
 
   function setPrompt(i,v){setPrompts(ps=>{const n=[...ps];n[i]=v;return n;});}
 
-  async function battle(){
+  function reveal(){
     if(prompts.some(p=>!p.trim()))return;
-    setPhase("judging");
-    const responses=await Promise.all(prompts.map(p=>ai("Respond creatively and concisely in under 28 words.",p)));
-    const entries=pList.map((p,i)=>`P${i+1}(${p.name}):"${prompts[i]}"→"${responses[i]}"`).join(" ");
-    const raw=await ai("Competition judge. Return ONLY JSON no markdown.",
-      `Task:"${ch.task}" ${entries}
-Return:{"winner":1,"scores":[7,5,6],"reasoning":"one punchy sentence why winner is better","badges":["Bold","Creative","Sharp"]}`);
-    try{
-      const parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());
-      setRes({...parsed,responses});
-      onAddScore(parsed.winner-1);
-      S.fanfare();setConfetti(true);setTimeout(()=>setConfetti(false),2800);
-    }catch{
-      setRes({winner:1,scores:pList.map(()=>7),reasoning:"All were creative!",responses,badges:pList.map(()=>"Creative")});
-      onAddScore(0);
-    }
+    setPhase("judge");
+  }
+
+  function pickWinner(i){
+    setWinner(i); onAddScore(i);
+    S.fanfare(); setConfetti(true); setTimeout(()=>setConfetti(false),2800);
     setPhase("result");
   }
 
@@ -669,7 +771,7 @@ Return:{"winner":1,"scores":[7,5,6],"reasoning":"one punchy sentence why winner 
             {pList.map((p,i)=>(
               <div key={p.id}>
                 <div style={{fontFamily:"Orbitron",color:PCOLS[i%PCOLS.length],fontSize:"0.6rem",marginBottom:8,letterSpacing:"0.1em"}}>👤 {p.name}</div>
-                <textarea placeholder={`Craft your prompt for Claude…\n\nBe specific & creative!`}
+                <textarea placeholder={`Write your response…\n\nBe creative & original!`}
                   value={prompts[i]||""} onChange={e=>setPrompt(i,e.target.value)}
                   style={{background:"#070910",border:`1.5px solid ${(prompts[i]||"").length>5?PCOLS[i%PCOLS.length]+"60":"#1a2040"}`,borderRadius:6,
                     color:"#c0d8f8",fontFamily:"Rajdhani",fontSize:"1rem",padding:"11px 14px",width:"100%",
@@ -680,59 +782,46 @@ Return:{"winner":1,"scores":[7,5,6],"reasoning":"one punchy sentence why winner 
           </div>
           <div style={{textAlign:"center"}}>
             <button style={{...btn("#ffe600"),fontSize:"1rem",padding:"16px 52px",opacity:prompts.every(p=>p.trim())?1:0.35}}
-              onClick={battle} disabled={!prompts.every(p=>p.trim())}>
-              ⚡ BATTLE!
+              onClick={reveal} disabled={!prompts.every(p=>p.trim())}>
+              👁️ REVEAL & JUDGE
             </button>
           </div>
         </>
       )}
 
-      {phase==="judging"&&(
-        <div style={{textAlign:"center",padding:"50px 0"}}>
-          <div style={{display:"flex",justifyContent:"center",gap:20,marginBottom:20,flexWrap:"wrap"}}>
-            {pList.map((p,i)=>(
-              <div key={p.id} style={{textAlign:"center"}}>
-                <div style={{width:44,height:44,border:`3px solid ${PCOLS[i%PCOLS.length]}40`,borderTopColor:PCOLS[i%PCOLS.length],borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 10px"}}/>
-                <div style={{fontFamily:"Orbitron",color:PCOLS[i%PCOLS.length],fontSize:"0.56rem"}}>{p.name}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"0.78rem",letterSpacing:"0.15em"}}>CLAUDE IS JUDGING…</div>
-          <div style={{color:"#252e60",fontSize:"0.8rem",marginTop:8,fontFamily:"Rajdhani"}}>Evaluating all prompts + responses</div>
-        </div>
-      )}
-
-      {phase==="result"&&res&&(
+      {phase==="judge"&&(
         <div style={{animation:"fadeUp 0.4s ease both"}}>
+          <div style={{...card("#ffe60020"),marginBottom:16,padding:"12px 16px",textAlign:"center"}}>
+            <div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"0.6rem",letterSpacing:"0.15em",marginBottom:4}}>🧑‍⚖️ HOST: PICK THE WINNER!</div>
+            <div style={{color:"#252e60",fontSize:"0.8rem",fontFamily:"Rajdhani"}}>Read all responses aloud, then tap the best one</div>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(pList.length,3)},1fr)`,gap:10,marginBottom:16}}>
             {pList.map((p,i)=>{
-              const isWin=res.winner===(i+1);
               const col=PCOLS[i%PCOLS.length];
               return(
-                <div key={p.id} style={{...card(isWin?"#ffe60080":"#1a2040"),animation:isWin?"winGlow 2s ease infinite":"none"}}>
-                  {isWin&&<div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"0.58rem",marginBottom:8}}>🏆 WINNER!</div>}
-                  <div style={{fontFamily:"Orbitron",color:col,fontSize:"0.58rem",marginBottom:6}}>{p.name}</div>
-                  <div style={{color:"#3a4060",fontSize:"0.8rem",marginBottom:8,fontStyle:"italic"}}>"{prompts[i]}"</div>
-                  <div style={{fontSize:"0.93rem",lineHeight:1.6,color:"#c0d0f0",marginBottom:10}}>
-                    <Type text={`"${res.responses?.[i]??""}`} speed={24}/>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{fontFamily:"Orbitron",color:"#00f5ff",fontSize:"1.2rem",fontWeight:900}}>{res.scores?.[i]??7}</span>
-                    <span style={{fontFamily:"Orbitron",color:"#1a2040",fontSize:"0.56rem"}}>/10</span>
-                    <span style={{marginLeft:8,background:"#ffffff08",borderRadius:3,padding:"2px 8px",fontSize:"0.72rem",color:"#3a4560",fontStyle:"italic"}}>
-                      {res.badges?.[i]??"Creative"}
-                    </span>
-                  </div>
+                <div key={p.id} style={{...card(col+"30"),borderColor:col+"60",display:"flex",flexDirection:"column",gap:10}}>
+                  <div style={{fontFamily:"Orbitron",color:col,fontSize:"0.58rem"}}>{p.name}</div>
+                  <div style={{fontSize:"0.95rem",lineHeight:1.65,color:"#d0deff",fontFamily:"Rajdhani",flex:1}}>"{prompts[i]}"</div>
+                  <button onClick={()=>pickWinner(i)}
+                    style={{...btn(col),fontSize:"0.7rem",padding:"10px 0",width:"100%"}}>
+                    🏆 {p.name} WINS!
+                  </button>
                 </div>
               );
             })}
           </div>
-          <div style={{...card("#ffe60028"),marginBottom:18}}>
-            <div style={{fontFamily:"Orbitron",color:"#3a4060",fontSize:"0.56rem",marginBottom:6,letterSpacing:"0.1em"}}>🧑‍⚖️ JUDGE'S VERDICT</div>
-            <div style={{color:"#d0c080",fontSize:"1rem",fontFamily:"Rajdhani"}}>{res.reasoning}</div>
+        </div>
+      )}
+
+      {phase==="result"&&winner!==null&&(
+        <div style={{animation:"fadeUp 0.4s ease both",textAlign:"center"}}>
+          <div style={{...card("#ffe60040"),padding:"28px 20px",marginBottom:20}}>
+            <div style={{fontSize:"3rem",marginBottom:8}}>🏆</div>
+            <div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"1.3rem",textShadow:"0 0 20px #ffe600",marginBottom:6}}>{pList[winner]?.name}</div>
+            <div style={{fontFamily:"Orbitron",color:"#252e60",fontSize:"0.6rem",letterSpacing:"0.15em"}}>WINS THIS ROUND! +100 PTS</div>
           </div>
           <div style={{display:"flex",gap:12,justifyContent:"center"}}>
-            <button style={btn("#ffe600",true)} onClick={()=>{setPhase("submit");setPrompts(pList.map(()=>""));setRes(null);setRound(r=>r+1);}}>↺ Next Challenge</button>
+            <button style={btn("#ffe600",true)} onClick={()=>{setPhase("submit");setPrompts(pList.map(()=>""));setWinner(null);setRound(r=>r+1);}}>↺ Next Challenge</button>
             <button style={btn("#00f5ff",true)} onClick={onDone}>VIEW RESULTS →</button>
           </div>
         </div>
