@@ -381,7 +381,8 @@ function QuizGame({ players, onAddScore, onDone }) {
   const [phase,setPhase]=useState("wheel");
   const [topic,setTopic]=useState(null);
   const [qData,setQData]=useState(null);
-  const [sel,setSel]=useState(null);
+  const [teamVotes,setTeamVotes]=useState({}); // { teamId: optionIndex }
+  const [revealed,setRevealed]=useState(false);
   const [timer,setTimer]=useState(20);
   const [qNum,setQNum]=useState(1);
   const [streak,setStreak]=useState(0);
@@ -390,11 +391,10 @@ function QuizGame({ players, onAddScore, onDone }) {
   const [ll,setLL]=useState({fifty:true,audience:true});
   const [audData,setAudData]=useState(null);
   const [cd,setCd]=useState(3);
-  const [activeTi,setActiveTi]=useState(0);
-  const tref=useRef(); const queueRef=useRef(null); const TOTAL=5;
+  const tref=useRef(); const queueRef=useRef(null); const timerRef=useRef(20); const TOTAL=5;
 
   function loadQ(top){
-    setPhase("loading"); setSel(null); setElim([]); setAudData(null);
+    setPhase("loading"); setTeamVotes({}); setRevealed(false); setElim([]); setAudData(null); timerRef.current=20;
     if(!queueRef.current||queueRef.current.topic!==top){
       queueRef.current={topic:top,queue:shuffle(QUIZ_BANK[top]||QUIZ_BANK["JavaScript"])};
     }
@@ -408,18 +408,37 @@ function QuizGame({ players, onAddScore, onDone }) {
   useEffect(()=>{
     if(phase!=="question") return;
     tref.current=setInterval(()=>{
-      setTimer(t=>{ if(t<=5)S.tick(); if(t<=1){clearInterval(tref.current);setPhase("reveal");S.wrong();return 0;} return t-1; });
+      setTimer(t=>{ const nt=t-1; timerRef.current=nt; if(t<=5)S.tick(); if(t<=1){clearInterval(tref.current);doReveal();return 0;} return nt; });
     },1000);
     return()=>clearInterval(tref.current);
   },[phase]);
 
-  function pick(i){
-    if(sel!==null||phase!=="question") return;
-    clearInterval(tref.current); setSel(i); setPhase("reveal");
-    const ok=i===qData.correct;
-    if(ok){S.correct();const pts=Math.max(50,timer*10)+(streak>=2?50:0);onAddScore(pts,activeTi);setStreak(s=>s+1);setConfetti(true);setTimeout(()=>setConfetti(false),2500);}
+  function setTeamVote(teamId,optIdx){
+    if(revealed||phase!=="question") return;
+    setTeamVotes(v=>({...v,[teamId]:optIdx}));
+  }
+
+  function doReveal(){
+    clearInterval(tref.current); setRevealed(true); setPhase("reveal");
+    const t=timerRef.current;
+    let anyCorrect=false;
+    pList.forEach((p,i)=>{
+      if(teamVotes[p.id]===qData.correct){
+        const pts=Math.max(50,t*10)+(streak>=2?50:0);
+        onAddScore(pts,i); anyCorrect=true;
+      }
+    });
+    if(anyCorrect){S.correct();setStreak(s=>s+1);setConfetti(true);setTimeout(()=>setConfetti(false),2500);}
     else{S.wrong();setStreak(0);}
   }
+
+  // auto-reveal when all teams have voted
+  useEffect(()=>{
+    if(phase!=="question"||revealed) return;
+    if(pList.length>0&&pList.every(p=>teamVotes[p.id]!==undefined)){
+      doReveal();
+    }
+  },[teamVotes,phase,revealed]);
 
   function lifeline(type){
     S.lifeline();
@@ -480,22 +499,6 @@ function QuizGame({ players, onAddScore, onDone }) {
               {phase==="question"&&<CTimer v={timer}/>}
             </div>
           </div>
-          {/* Team selector */}
-          {pList.length>1&&(
-            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,flexWrap:"wrap"}}>
-              <span style={{fontFamily:"Orbitron",fontSize:"0.48rem",color:"#252e60",letterSpacing:"0.1em"}}>TEAM:</span>
-              {pList.map((p,i)=>(
-                <button key={p.id} onClick={()=>setActiveTi(i)}
-                  style={{fontFamily:"Orbitron",fontSize:"0.52rem",padding:"4px 10px",borderRadius:4,
-                    border:`1px solid ${i===activeTi?PCOLS[i%PCOLS.length]:"#1a2040"}`,
-                    background:i===activeTi?PCOLS[i%PCOLS.length]+"18":"transparent",
-                    color:i===activeTi?PCOLS[i%PCOLS.length]:"#252e60",cursor:"pointer",
-                    boxShadow:i===activeTi?`0 0 8px ${PCOLS[i%PCOLS.length]}40`:"none"}}>
-                  {p.name}
-                </button>
-              ))}
-            </div>
-          )}
           {/* Lifelines */}
           {phase==="question"&&(
             <div style={{display:"flex",gap:8,marginBottom:14}}>
@@ -511,24 +514,21 @@ function QuizGame({ players, onAddScore, onDone }) {
             <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at top left,#00f5ff06,transparent 65%)",pointerEvents:"none"}}/>
             <div style={{fontSize:"1.1rem",fontWeight:600,lineHeight:1.65,fontFamily:"Rajdhani"}}>{qData.question}</div>
           </div>
-          {/* Options */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11}}>
+          {/* Options grid */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,marginBottom:18}}>
             {qData.options?.map((opt,i)=>{
               const isE=elim.includes(i);
               let bc="#1a2040",bg="#0d1020",col="#8090b0";
-              if(phase==="reveal"){ if(i===qData.correct){bc="#00ff90";bg="#00ff9018";col="#00ff90";} else if(i===sel){bc="#ff4060";bg="#ff406015";col="#ff4060";} }
+              if(phase==="reveal"){ if(i===qData.correct){bc="#00ff90";bg="#00ff9018";col="#00ff90";} }
               return(
                 <div key={i}>
-                  <button onClick={()=>pick(i)} disabled={phase!=="question"||isE}
-                    style={{width:"100%",padding:"15px 16px",borderRadius:6,border:`2px solid ${isE?"#1a2040":bc}`,
-                      background:isE?"#070910":bg,color:isE?"#1a2040":col,
-                      fontFamily:"Rajdhani",fontSize:"1rem",fontWeight:600,
-                      cursor:isE||phase!=="question"?"default":"pointer",textAlign:"left",transition:"all 0.18s",
-                      boxShadow:phase==="reveal"&&i===qData.correct?"0 0 22px #00ff9050":"none",
-                      animation:phase==="reveal"&&i===sel&&i!==qData.correct?"shake 0.4s ease":"none"}}>
+                  <div style={{width:"100%",padding:"12px 14px",borderRadius:6,border:`2px solid ${isE?"#1a2040":bc}`,
+                    background:isE?"#070910":bg,color:isE?"#1a2040":col,
+                    fontFamily:"Rajdhani",fontSize:"1rem",fontWeight:600,textAlign:"left",
+                    boxShadow:phase==="reveal"&&i===qData.correct?"0 0 22px #00ff9050":"none"}}>
                     <span style={{opacity:0.38,marginRight:8,fontFamily:"Orbitron",fontSize:"0.6rem"}}>{"ABCD"[i]}</span>
                     {isE?"✗":opt.replace(/^[A-D]\.\s*/,"")}
-                  </button>
+                  </div>
                   {audData&&!isE&&(
                     <div>
                       <div style={{height:5,borderRadius:3,background:"#1a2040",overflow:"hidden",marginTop:4}}>
@@ -541,15 +541,73 @@ function QuizGame({ players, onAddScore, onDone }) {
               );
             })}
           </div>
+          {/* Per-team answer selection */}
+          {phase==="question"&&(
+            <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
+              <div style={{fontFamily:"Orbitron",fontSize:"0.52rem",color:"#252e60",letterSpacing:"0.12em",marginBottom:2}}>TEAM ANSWERS:</div>
+              {pList.map((p,pi)=>{
+                const col=PCOLS[pi%PCOLS.length];
+                const voted=teamVotes[p.id];
+                return(
+                  <div key={p.id} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",
+                    borderRadius:8,border:`1px solid ${voted!==undefined?col+"60":"#1a2040"}`,background:"#0a0c18",flexWrap:"wrap"}}>
+                    <span style={{fontFamily:"Orbitron",fontSize:"0.55rem",color:col,flex:"0 0 90px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
+                    {qData.options?.map((_,oi)=>{
+                      const isE=elim.includes(oi);
+                      if(isE) return null;
+                      const active=voted===oi;
+                      return(
+                        <button key={oi} onClick={()=>setTeamVote(p.id,oi)}
+                          style={{fontFamily:"Orbitron",fontSize:"0.55rem",padding:"5px 12px",borderRadius:4,
+                            border:`1px solid ${active?col:"#1a2040"}`,
+                            background:active?col+"20":"transparent",
+                            color:active?col:"#3a4570",cursor:"pointer",transition:"all 0.15s",
+                            boxShadow:active?`0 0 8px ${col}40`:"none"}}>
+                          {"ABCD"[oi]}
+                        </button>
+                      );
+                    })}
+                    {voted!==undefined&&<span style={{color:col,fontSize:"0.75rem",marginLeft:"auto"}}>✓</span>}
+                  </div>
+                );
+              })}
+              {pList.every(p=>teamVotes[p.id]!==undefined)&&(
+                <div style={{textAlign:"center",marginTop:4}}>
+                  <button style={{...btn("#ffe600"),fontSize:"0.9rem",padding:"12px 36px"}} onClick={doReveal}>⚡ REVEAL!</button>
+                </div>
+              )}
+            </div>
+          )}
           {/* Reveal box */}
           {phase==="reveal"&&(
-            <div style={{marginTop:16,...card(sel===qData.correct?"#00ff9050":"#ff406050",sel===qData.correct?"#00ff9010":"#ff406010")}}>
-              <div style={{color:sel===qData.correct?"#00ff90":"#ff4060",fontWeight:700,fontSize:"1rem",marginBottom:6}}>
-                {sel===qData.correct?`✓ Correct! +${Math.max(50,timer*10)+(streak>2?50:0)} pts${streak>2?" 🔥":""}`:
-                  `✗ Answer: ${qData.options?.[qData.correct]?.replace(/^[A-D]\.\s*/,"")}`}
+            <div>
+              {/* Per-team result rows */}
+              <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+                {pList.map((p,pi)=>{
+                  const col=PCOLS[pi%PCOLS.length];
+                  const voted=teamVotes[p.id];
+                  const correct=voted===qData.correct;
+                  const pts=Math.max(50,timerRef.current*10)+(streak>2?50:0);
+                  return(
+                    <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",
+                      borderRadius:8,border:`1px solid ${correct?"#00ff9060":"#ff406040"}`,
+                      background:correct?"#00ff9008":"#ff406008"}}>
+                      <span style={{fontFamily:"Orbitron",fontSize:"0.58rem",color:col,flex:"0 0 90px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
+                      <span style={{fontFamily:"Orbitron",fontSize:"0.62rem",color:correct?"#00ff90":"#ff4060"}}>
+                        {voted!==undefined?`${["A","B","C","D"][voted]} — `:"No answer — "}
+                        {correct?`✓ +${pts} pts`:"✗"}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-              <div style={{color:"#3040a0",fontSize:"0.85rem",marginBottom:8}}>{qData.explanation}</div>
-              {qData.fun_fact&&<div style={{color:"#3a4570",fontSize:"0.82rem",borderTop:"1px solid #1a2040",paddingTop:10}}>💡 {qData.fun_fact}</div>}
+              <div style={{...card("#00f5ff15"),marginBottom:10}}>
+                <div style={{color:"#00ff90",fontWeight:700,fontSize:"0.95rem",marginBottom:6}}>
+                  ✓ Answer: {qData.options?.[qData.correct]?.replace(/^[A-D]\.\s*/,"")}
+                </div>
+                <div style={{color:"#3040a0",fontSize:"0.85rem",marginBottom:8}}>{qData.explanation}</div>
+                {qData.fun_fact&&<div style={{color:"#3a4570",fontSize:"0.82rem",borderTop:"1px solid #1a2040",paddingTop:10}}>💡 {qData.fun_fact}</div>}
+              </div>
               <div style={{textAlign:"right",marginTop:14}}>
                 <button style={btn("#00f5ff",true)} onClick={()=>{ if(qNum>=TOTAL)setPhase("done"); else{setQNum(n=>n+1);loadQ(topic);} }}>
                   {qNum>=TOTAL?"🎉 Finish":"Next →"}
