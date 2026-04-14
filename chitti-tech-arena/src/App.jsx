@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import mqtt from "mqtt";
 
 /* ═══════════════════════════════════════════════════════════════
    CHITTI TECH ARENA — ULTIMATE AI TECH GAME SHOW
@@ -687,34 +688,35 @@ Return:{"winner":1,"p1_score":7,"p2_score":5,"reasoning":"one punchy sentence wh
 
 // ── BUZZER MODE ───────────────────────────────────────────────
 const BUZZER_COLORS = ["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7","#ec4899","#38bdf8"];
-const MAX_WS_RETRIES = 4; // stop retrying after this (e.g. on Vercel)
+const MQTT_URL = "wss://broker.emqx.io:8084/mqtt"; // free public broker, no sign-up needed
 
 function BuzzerMode({ players, onAddScore }) {
-  // ── Countdown (always local) ──────────────────────────────────
+  // ── Room code — unique per session, shared via QR ─────────────
+  const [roomCode] = useState(() => Math.random().toString(36).substr(2,6).toUpperCase());
+
+  // ── MQTT connection ───────────────────────────────────────────
+  const [mqttConn, setMqttConn] = useState(false);
+  const mqttRef    = useRef(null);
+
+  // ── Game state (MQTT-driven or local fallback) ────────────────
+  const [phase,    setPhase]    = useState("idle");
+  const [winner,   setWinner]   = useState(null);
+  const [buzzTime, setBuzzTime] = useState(null);
+  const [disabled, setDisabled] = useState([]);
+
+  // Refs keep closure-safe copies for MQTT message handlers
+  const phaseRef    = useRef("idle");
+  const winnerRef   = useRef(null);
+  const disabledRef = useRef([]);
+
+  // ── Local countdown + single-screen timing ────────────────────
   const [cdPhase, setCdPhase] = useState(false);
   const [cd,      setCd]      = useState(3);
-  const [showQR,  setShowQR]  = useState(false);
-
-  // ── Local single-screen state (used when WS offline) ─────────
-  const [lPhase,    setLPhase]    = useState("idle");
-  const [lWinner,   setLWinner]   = useState(null);
-  const [lBuzzTime, setLBuzzTime] = useState(null);
-  const [lDisabled, setLDisabled] = useState([]);
-  const lStartRef = useRef(null);
-
-  // ── WebSocket state ───────────────────────────────────────────
-  const [wsConnected, setWsConnected] = useState(false);
-  const [wsPhase,     setWsPhase]     = useState("idle");
-  const [wsWinner,    setWsWinner]    = useState(null);
-  const [wsBuzzTime,  setWsBuzzTime]  = useState(null);
-  const [wsDisabled,  setWsDisabled]  = useState([]);
-  const [serverIp,    setServerIp]    = useState(window.location.hostname);
-
-  const wsRef      = useRef(null);
+  const [showQR,  setShowQR]  = useState(true);
   const cdRef      = useRef(null);
-  const retriesRef = useRef(0);
+  const lStartRef  = useRef(null);
 
-  // ── Scores (local, synced from players prop) ──────────────────
+  // ── Scores ────────────────────────────────────────────────────
   const [scores, setScores] = useState(() =>
     Object.fromEntries(players.map(p => [p.id, p.score]))
   );
@@ -722,143 +724,170 @@ function BuzzerMode({ players, onAddScore }) {
     setScores(Object.fromEntries(players.map(p => [p.id, p.score])));
   }, [players]);
 
-  // ── WebSocket — silent retry, give up after MAX_WS_RETRIES ───
+  // ── Keep refs in sync ─────────────────────────────────────────
+  useEffect(() => { phaseRef.current    = phase;    }, [phase]);
+  useEffect(() => { winnerRef.current   = winner;   }, [winner]);
+  useEffect(() => { disabledRef.current = disabled; }, [disabled]);
+
+  // ── MQTT: connect once on mount ───────────────────────────────
   useEffect(() => {
-    let ws, retryTimer;
-    function connect() {
-      if (retriesRef.current >= MAX_WS_RETRIES) return; // give up silently
+    const client = mqtt.connect(MQTT_URL, {
+      clientId: `chitti_host_${Math.random().toString(36).substr(2,8)}`,
+      clean: true, reconnectPeriod: 3000, connectTimeout: 8000,
+    });
+    mqttRef.current = client;
+
+    client.on("connect", () => {
+      setMqttConn(true);
+      client.subscribe(`chitti/${roomCode}/buzz`, { qos: 0 });
+      // Publish current state so any late-connecting phones get it
+      pubState("idle", null, null, []);
+    });
+    client.on("offline",    () => setMqttConn(false));
+    client.on("error",      () => {});  // suppress
+
+    client.on("message", (_topic, payload) => {
       try {
-        ws = new WebSocket(`ws://${window.location.hostname}:3001`);
-        wsRef.current = ws;
-        ws.onopen = () => { setWsConnected(true); retriesRef.current = 0; };
-        ws.onclose = () => {
-          setWsConnected(false);
-          retriesRef.current++;
-          retryTimer = setTimeout(connect, 2500);
-        };
-        ws.onerror = () => {}; // suppress console errors
-        ws.onmessage = e => {
-          const msg = JSON.parse(e.data);
-          if (msg.type === "STATE") {
-            setWsPhase(msg.phase); setWsWinner(msg.winner);
-            setWsBuzzTime(msg.buzzTime); setWsDisabled(msg.disabledTeams || []);
-            if (msg.serverIp) setServerIp(msg.serverIp);
-            if (msg.phase === "buzzed") S.buzzer();
-            if (msg.phase === "ready")  S.ding();
-          }
-          if (msg.type === "AWARDED") {
-            S.correct();
-            const p = players.find(x => x.name === msg.team);
-            if (p) { onAddScore(msg.points, p.id); setScores(s => ({...s,[p.id]:(s[p.id]||0)+msg.points})); }
-          }
-        };
+        const msg = JSON.parse(payload.toString());
+        // Only accept first buzz when in ready phase
+        if (
+          phaseRef.current === "ready" &&
+          !winnerRef.current &&
+          !disabledRef.current.includes(msg.team)
+        ) {
+          winnerRef.current = msg.team;
+          phaseRef.current  = "buzzed";
+          setWinner(msg.team);
+          setBuzzTime(msg.elapsed);
+          setPhase("buzzed");
+          S.buzzer();
+          pubState("buzzed", msg.team, msg.elapsed, disabledRef.current);
+        }
       } catch {}
-    }
-    connect();
-    return () => { ws?.close(); clearTimeout(retryTimer); clearInterval(cdRef.current); };
-  }, []);
+    });
 
-  // ── Derived: pick WS or local state ──────────────────────────
-  const phase    = cdPhase ? "countdown" : wsConnected ? wsPhase    : lPhase;
-  const winner   = wsConnected ? wsWinner   : lWinner;
-  const buzzTime = wsConnected ? wsBuzzTime : lBuzzTime;
-  const disabled = wsConnected ? wsDisabled : lDisabled;
-  const winPlayer = players.find(p => p.name === winner);
-  const playerUrl = (p, i) =>
-    `http://${serverIp}:5173/buzz?team=${encodeURIComponent(p.name)}&ci=${i}`;
+    return () => { client.end(true); clearInterval(cdRef.current); };
+  }, [roomCode]);
 
-  // ── Actions ───────────────────────────────────────────────────
+  // ── Publish state to all phones ───────────────────────────────
+  function pubState(p, w, bt, dis) {
+    mqttRef.current?.publish(
+      `chitti/${roomCode}/state`,
+      JSON.stringify({ phase:p, winner:w, buzzTime:bt, disabledTeams:dis }),
+      { retain: true, qos: 0 }
+    );
+  }
+
+  // ── Host actions ──────────────────────────────────────────────
   function startRound() {
     S.swoosh();
-    // Reset local state
-    setLPhase("idle"); setLWinner(null); setLBuzzTime(null); setLDisabled([]);
+    setWinner(null); setBuzzTime(null); setDisabled([]);
+    winnerRef.current = null; disabledRef.current = [];
     setCdPhase(true); setCd(3);
     let c = 3;
     cdRef.current = setInterval(() => {
       c--;
       if (c <= 0) {
         clearInterval(cdRef.current); setCdPhase(false); S.ding();
-        if (wsConnected) {
-          wsRef.current?.send(JSON.stringify({ type: "SET_READY" }));
-        } else {
-          setLPhase("ready"); lStartRef.current = performance.now();
-        }
+        phaseRef.current = "ready";
+        setPhase("ready");
+        lStartRef.current = performance.now();
+        pubState("ready", null, null, disabledRef.current);
       } else { S.tick(); setCd(c); }
     }, 1000);
   }
 
+  // Local buzz — used in single-screen mode (MQTT offline)
   function localBuzz(p) {
-    if (phase !== "ready" || lWinner || lDisabled.includes(p.name)) return;
+    if (phaseRef.current !== "ready" || winnerRef.current || disabledRef.current.includes(p.name)) return;
     const elapsed = ((performance.now() - lStartRef.current) / 1000).toFixed(2);
     S.buzzer();
-    setLWinner(p.name); setLBuzzTime(elapsed); setLPhase("buzzed");
+    winnerRef.current = p.name; phaseRef.current = "buzzed";
+    setWinner(p.name); setBuzzTime(elapsed); setPhase("buzzed");
   }
 
   function awardCorrect() {
-    if (!winner) return;
-    if (wsConnected) {
-      wsRef.current?.send(JSON.stringify({ type: "AWARD", team: winner, points: 100 }));
-    } else {
-      S.correct();
-      const p = players.find(x => x.name === winner);
-      if (p) { onAddScore(100, p.id); setScores(s => ({...s,[p.id]:(s[p.id]||0)+100})); }
-      setLPhase("idle"); setLWinner(null); setLBuzzTime(null); setLDisabled([]);
-    }
+    if (!winner) return; S.correct();
+    const p = players.find(x => x.name === winner);
+    if (p) { onAddScore(100, p.id); setScores(s => ({...s,[p.id]:(s[p.id]||0)+100})); }
+    phaseRef.current = "idle"; winnerRef.current = null; disabledRef.current = [];
+    setPhase("idle"); setWinner(null); setBuzzTime(null); setDisabled([]);
+    pubState("idle", null, null, []);
   }
 
   function penaliseWrong() {
     if (!winner) return; S.wrong();
-    if (wsConnected) {
-      wsRef.current?.send(JSON.stringify({ type: "DISABLE_TEAM", team: winner }));
+    const next = [...disabledRef.current, winner];
+    disabledRef.current = next; winnerRef.current = null;
+    setDisabled(next); setWinner(null); setBuzzTime(null);
+    const remaining = players.filter(p => !next.includes(p.name));
+    if (remaining.length === 0) {
+      phaseRef.current = "idle"; setPhase("idle");
+      pubState("idle", null, null, next);
     } else {
-      const next = [...lDisabled, winner];
-      setLDisabled(next); setLWinner(null); setLBuzzTime(null);
-      const remaining = players.filter(p => !next.includes(p.name));
-      if (remaining.length === 0) { setLPhase("idle"); }
-      else { setLPhase("ready"); lStartRef.current = performance.now(); }
+      phaseRef.current = "ready"; setPhase("ready");
+      lStartRef.current = performance.now();
+      pubState("ready", null, null, next);
     }
   }
 
   function resetAll() {
     clearInterval(cdRef.current); setCdPhase(false);
-    setLPhase("idle"); setLWinner(null); setLBuzzTime(null); setLDisabled([]);
-    wsRef.current?.send(JSON.stringify({ type: "RESET" }));
+    phaseRef.current = "idle"; winnerRef.current = null; disabledRef.current = [];
+    setPhase("idle"); setWinner(null); setBuzzTime(null); setDisabled([]);
+    pubState("idle", null, null, []);
   }
+
+  // ── Derived ───────────────────────────────────────────────────
+  const displayPhase = cdPhase ? "countdown" : phase;
+  const winPlayer    = players.find(p => p.name === winner);
+  const playerUrl    = (p, i) =>
+    `${window.location.origin}/buzz?team=${encodeURIComponent(p.name)}&ci=${i}&room=${roomCode}`;
 
   // ── Render ────────────────────────────────────────────────────
   return (
     <div>
       {/* Header */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
         <div>
           <div style={{ fontFamily:"Orbitron", fontWeight:900, fontSize:"1.1rem" }}>
             <span style={{ color:"#ffe600", textShadow:"0 0 14px #ffe600" }}>🔔 BUZZER </span>
             <span style={{ color:"#00f5ff",  textShadow:"0 0 14px #00f5ff"  }}>MODE</span>
           </div>
           <div style={{ fontFamily:"Orbitron", fontSize:"0.47rem", color:"#1a2244", letterSpacing:"0.15em", marginTop:3 }}>
-            {wsConnected ? "MULTI-DEVICE · PHONES CONNECTED" : "SINGLE SCREEN MODE · CLICK BUTTONS BELOW"}
+            {mqttConn ? "MULTI-DEVICE · PHONES CONNECTED VIA INTERNET" : "SINGLE SCREEN · CONNECTING…"}
           </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          {/* Mode badge */}
-          <div style={{ ...tag(wsConnected ? "#00ff90" : "#ffe600"),
-            animation: wsConnected ? "none" : "none" }}>
-            {wsConnected ? "📡 MULTI-DEVICE" : "🖥 SINGLE SCREEN"}
+          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+            <div style={{ width:7, height:7, borderRadius:"50%",
+              background: mqttConn?"#00ff90":"#ffe600",
+              boxShadow: mqttConn?"0 0 8px #00ff90":"0 0 8px #ffe60080",
+              animation: mqttConn?"none":"pulse 1s infinite",
+            }}/>
+            <span style={{ fontFamily:"Orbitron", fontSize:"0.48rem", color:mqttConn?"#00ff90":"#ffe600" }}>
+              {mqttConn ? "LIVE" : "CONNECTING"}
+            </span>
           </div>
-          {/* QR button — only useful when WS is live */}
-          {wsConnected && (
-            <button onClick={()=>setShowQR(q=>!q)} style={{ ...btn("#ffe600",true), fontSize:"0.55rem" }}>
-              {showQR ? "HIDE QR" : "📱 QR CODES"}
-            </button>
-          )}
+          <button onClick={()=>setShowQR(q=>!q)}
+            style={{ ...btn("#ffe600",true), fontSize:"0.55rem" }}>
+            {showQR?"HIDE QR":"📱 QR CODES"}
+          </button>
         </div>
       </div>
 
-      {/* QR Code panel (multi-device only) */}
-      {showQR && wsConnected && (
+      {/* Room code + QR panel */}
+      {showQR && (
         <div style={{ ...card("#ffe60030"), marginBottom:16, padding:"14px 16px" }}>
-          <div style={{ fontFamily:"Orbitron", color:"#ffe600", fontSize:"0.6rem", marginBottom:12, letterSpacing:"0.1em" }}>
-            📱 SCAN TO BUZZ FROM YOUR PHONE
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+            <div style={{ fontFamily:"Orbitron", color:"#ffe600", fontSize:"0.6rem", letterSpacing:"0.1em" }}>
+              📱 SCAN TO BUZZ FROM PHONE
+            </div>
+            <div style={{ fontFamily:"Orbitron", fontSize:"0.55rem", letterSpacing:"0.18em",
+              color:"#00f5ff", textShadow:"0 0 10px #00f5ff",
+              background:"#00f5ff14", border:"1px solid #00f5ff40", borderRadius:4, padding:"3px 10px" }}>
+              ROOM: {roomCode}
+            </div>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:14 }}>
             {players.map((p, i) => {
@@ -870,19 +899,23 @@ function BuzzerMode({ players, onAddScore }) {
                     <QRCodeSVG value={playerUrl(p,i)} size={100} bgColor="#ffffff" fgColor="#07080f" level="M"/>
                   </div>
                   <div style={{ fontFamily:"Orbitron", color:col, fontSize:"0.6rem", marginTop:6, fontWeight:700 }}>{p.name}</div>
-                  <div style={{ color:"#252e60", fontSize:"0.58rem", marginTop:2 }}>{serverIp}:5173</div>
+                  <div style={{ color:"#252e60", fontSize:"0.55rem", marginTop:2, wordBreak:"break-all" }}>
+                    {window.location.hostname}/buzz
+                  </div>
                 </div>
               );
             })}
           </div>
-          <div style={{ fontFamily:"Orbitron", color:"#1a2040", fontSize:"0.5rem", marginTop:12, letterSpacing:"0.1em" }}>
-            ALL PHONES MUST BE ON THE SAME WIFI AS THE HOST LAPTOP
-          </div>
+          {!mqttConn && (
+            <div style={{ fontFamily:"Orbitron", color:"#3a3010", fontSize:"0.52rem", marginTop:10, letterSpacing:"0.08em" }}>
+              ⚡ CONNECTING TO BROKER… QR CODES WORK ONCE CONNECTED
+            </div>
+          )}
         </div>
       )}
 
       {/* Winner banner */}
-      {phase === "buzzed" && winPlayer && (
+      {displayPhase === "buzzed" && winPlayer && (
         <div style={{ background:"linear-gradient(135deg,#ffe60018,#00f5ff18)", border:"2px solid #ffe600",
           borderRadius:10, padding:"18px 20px", marginBottom:20, textAlign:"center",
           animation:"pop 0.4s cubic-bezier(0.34,1.56,0.64,1)", boxShadow:"0 0 40px #ffe60050" }}>
@@ -895,7 +928,7 @@ function BuzzerMode({ players, onAddScore }) {
       )}
 
       {/* Countdown */}
-      {phase === "countdown" && (
+      {displayPhase === "countdown" && (
         <div style={{ textAlign:"center", padding:"28px 0", marginBottom:20 }}>
           <div style={{ fontFamily:"Orbitron", fontWeight:900, fontSize:"6rem", color:"#ffe600",
             textShadow:"0 0 50px #ffe600", animation:"countdownPop 0.35s ease" }}>{cd}</div>
@@ -904,12 +937,12 @@ function BuzzerMode({ players, onAddScore }) {
       )}
 
       {/* Ready banner */}
-      {phase === "ready" && (
+      {displayPhase === "ready" && (
         <div style={{ textAlign:"center", marginBottom:16, padding:"10px 0",
           fontFamily:"Orbitron", color:"#00ff90", fontSize:"0.85rem",
           letterSpacing:"0.25em", animation:"pulse 0.7s ease-in-out infinite",
           textShadow:"0 0 14px #00ff90" }}>
-          {wsConnected ? "▶ BUZZ ON YOUR PHONE!" : "▶ TAP YOUR TEAM'S BUTTON!"}
+          {mqttConn ? "▶ BUZZ ON YOUR PHONE!" : "▶ TAP YOUR TEAM'S BUTTON!"}
         </div>
       )}
 
@@ -919,25 +952,25 @@ function BuzzerMode({ players, onAddScore }) {
           const col      = BUZZER_COLORS[i % BUZZER_COLORS.length];
           const isWinner = winner === p.name;
           const isElim   = disabled.includes(p.name);
-          const inactive = isElim || (winner && !isWinner) || phase==="countdown" || phase==="idle";
-          const clickable = !wsConnected && phase==="ready" && !isElim && !winner;
+          const inactive = isElim || (winner && !isWinner) || displayPhase==="countdown" || displayPhase==="idle";
+          const clickable = !mqttConn && displayPhase==="ready" && !isElim && !winner;
 
           return (
             <button key={p.id}
-              onClick={() => !wsConnected && localBuzz(p)}
-              disabled={wsConnected || (!clickable && !isWinner)}
+              onClick={() => !mqttConn && localBuzz(p)}
+              disabled={mqttConn || (!clickable && !isWinner)}
               style={{
                 width:"100%", minHeight:90, borderRadius:10,
                 border:`3px solid ${isElim?"#1a2040":isWinner?col:col+"80"}`,
-                background: isElim?"#07080f":isWinner?`${col}22`:phase==="ready"?`${col}12`:`${col}08`,
+                background: isElim?"#07080f":isWinner?`${col}22`:displayPhase==="ready"?`${col}12`:`${col}08`,
                 color: isElim?"#1a2040":isWinner?col:inactive?col+"40":col,
                 fontFamily:"Orbitron", fontWeight:900, fontSize:"1.2rem", letterSpacing:"0.07em",
-                cursor: clickable ? "pointer" : "default",
+                cursor: clickable?"pointer":"default",
                 textShadow: isWinner?`0 0 20px ${col}`:"none",
                 boxShadow: isWinner?`0 0 30px ${col}60,0 0 70px ${col}30,inset 0 0 30px ${col}20`
-                  : phase==="ready"&&!inactive?`0 0 14px ${col}40`:"none",
+                  : displayPhase==="ready"&&!inactive?`0 0 14px ${col}40`:"none",
                 animation: isWinner?"buzzWin 0.5s ease,buzzerFlash 0.3s ease 0.5s 3"
-                  : phase==="ready"&&!inactive?"readyPulse 1.4s ease-in-out infinite":"none",
+                  : displayPhase==="ready"&&!inactive?"readyPulse 1.4s ease-in-out infinite":"none",
                 display:"flex", alignItems:"center", gap:16, padding:"0 20px",
                 position:"relative", overflow:"hidden", transition:"all 0.18s",
               }}>
@@ -950,11 +983,11 @@ function BuzzerMode({ players, onAddScore }) {
               <div style={{ flex:1, textAlign:"left" }}>
                 <div>{p.name}</div>
                 <div style={{ fontFamily:"Rajdhani", fontSize:"0.82rem", fontWeight:600, opacity:0.55, marginTop:2 }}>
-                  {isElim ? "LOCKED OUT THIS ROUND"
-                    : isWinner ? "BUZZED FIRST!"
-                    : phase==="ready" && !wsConnected ? "TAP TO BUZZ!"
-                    : phase==="ready" ? "WAITING ON PHONE…"
-                    : "STANDBY"}
+                  {isElim?"LOCKED OUT THIS ROUND"
+                    :isWinner?"BUZZED FIRST!"
+                    :displayPhase==="ready"&&!mqttConn?"TAP TO BUZZ!"
+                    :displayPhase==="ready"?"WAITING ON PHONE…"
+                    :"STANDBY"}
                 </div>
               </div>
               <div style={{ fontFamily:"Orbitron", fontSize:"1rem", color:isElim?"#1a2040":col, opacity:isElim?0.3:1 }}>
@@ -968,21 +1001,21 @@ function BuzzerMode({ players, onAddScore }) {
       {/* Host controls */}
       <div style={{ ...card("#1a2040"), marginBottom:18 }}>
         <div style={{ fontFamily:"Orbitron", color:"#252e60", fontSize:"0.58rem", letterSpacing:"0.12em", marginBottom:14 }}>🎙 HOST CONTROLS</div>
-        {phase === "idle" && (
+        {displayPhase==="idle" && (
           <button onClick={startRound}
             style={{ ...btn("#ffe600"), width:"100%", fontSize:"0.9rem", padding:"18px 0" }}>
             ▶ START ROUND
           </button>
         )}
-        {phase === "countdown" && (
+        {displayPhase==="countdown" && (
           <div style={{ fontFamily:"Orbitron", color:"#252e60", fontSize:"0.7rem", textAlign:"center", padding:"12px 0", letterSpacing:"0.15em" }}>
             COUNTDOWN IN PROGRESS…
           </div>
         )}
-        {phase === "ready" && (
+        {displayPhase==="ready" && (
           <button onClick={resetAll} style={{ ...btn("#ff4060",true), width:"100%" }}>🔄 ABORT ROUND</button>
         )}
-        {phase === "buzzed" && (
+        {displayPhase==="buzzed" && (
           <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
             <button onClick={awardCorrect} style={{ ...btn("#00ff90"), flex:1, fontSize:"0.7rem" }}>✅ CORRECT — +100 pts</button>
             <button onClick={penaliseWrong} style={{ ...btn("#ff4060"), flex:1, fontSize:"0.7rem" }}>❌ WRONG — NEXT TEAM</button>
@@ -996,7 +1029,7 @@ function BuzzerMode({ players, onAddScore }) {
         <div style={{ fontFamily:"Orbitron", color:"#3a4060", fontSize:"0.56rem", letterSpacing:"0.12em", marginBottom:10 }}>LIVE SCORES</div>
         <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
           {[...players].sort((a,b)=>(scores[b.id]||0)-(scores[a.id]||0)).map((p,i)=>{
-            const col = BUZZER_COLORS[players.indexOf(p) % BUZZER_COLORS.length];
+            const col  = BUZZER_COLORS[players.indexOf(p)%BUZZER_COLORS.length];
             const maxS = Math.max(1,...players.map(x=>scores[x.id]||0));
             return (
               <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
