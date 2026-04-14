@@ -572,29 +572,34 @@ const BATTLES=[
   {task:"Get Claude to hype CHITTI TECH ARENA annual function in under 20 words",icon:"🎉"},
 ];
 
-function PromptBattle({ onAddScore, onDone }) {
+function PromptBattle({ players, onAddScore, onDone }) {
+  const PCOLS=["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7"];
+  const pList=players&&players.length>=2?players:[{id:1,name:"Player 1"},{id:2,name:"Player 2"}];
   const [phase,setPhase]=useState("submit");
-  const [p1,setP1]=useState(""); const [p2,setP2]=useState("");
+  const [prompts,setPrompts]=useState(()=>pList.map(()=>""));
   const [res,setRes]=useState(null); const [round,setRound]=useState(0);
   const [confetti,setConfetti]=useState(false);
   const ch=BATTLES[round%BATTLES.length];
 
+  function setPrompt(i,v){setPrompts(ps=>{const n=[...ps];n[i]=v;return n;});}
+
   async function battle(){
-    if(!p1.trim()||!p2.trim()) return;
+    if(prompts.some(p=>!p.trim()))return;
     setPhase("judging");
-    const [r1,r2]=await Promise.all([
-      ai("Respond creatively and concisely in under 28 words.",p1),
-      ai("Respond creatively and concisely in under 28 words.",p2),
-    ]);
+    const responses=await Promise.all(prompts.map(p=>ai("Respond creatively and concisely in under 28 words.",p)));
+    const entries=pList.map((p,i)=>`P${i+1}(${p.name}):"${prompts[i]}"→"${responses[i]}"`).join(" ");
     const raw=await ai("Competition judge. Return ONLY JSON no markdown.",
-      `Task:"${ch.task}" P1:"${p1}"→"${r1}" P2:"${p2}"→"${r2}"
-Return:{"winner":1,"p1_score":7,"p2_score":5,"reasoning":"one punchy sentence why winner is better","p1_badge":"one-word label for p1 style","p2_badge":"one-word label for p2 style"}`);
+      `Task:"${ch.task}" ${entries}
+Return:{"winner":1,"scores":[7,5,6],"reasoning":"one punchy sentence why winner is better","badges":["Bold","Creative","Sharp"]}`);
     try{
       const parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());
-      setRes({...parsed,r1,r2});
-      onAddScore(parsed.winner===1?100:0,parsed.winner===2?100:0);
-      S.fanfare(); setConfetti(true); setTimeout(()=>setConfetti(false),2800);
-    }catch{setRes({winner:1,p1_score:7,p2_score:5,reasoning:"Both were creative!",r1,r2,p1_badge:"Bold",p2_badge:"Creative"});}
+      setRes({...parsed,responses});
+      onAddScore(parsed.winner-1);
+      S.fanfare();setConfetti(true);setTimeout(()=>setConfetti(false),2800);
+    }catch{
+      setRes({winner:1,scores:pList.map(()=>7),reasoning:"All were creative!",responses,badges:pList.map(()=>"Creative")});
+      onAddScore(0);
+    }
     setPhase("result");
   }
 
@@ -613,20 +618,22 @@ Return:{"winner":1,"p1_score":7,"p2_score":5,"reasoning":"one punchy sentence wh
 
       {phase==="submit"&&(
         <>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:20}}>
-            {[{label:"PLAYER 1",c:"#00f5ff",v:p1,s:setP1},{label:"PLAYER 2",c:"#ff00c8",v:p2,s:setP2}].map((x,i)=>(
-              <div key={i}>
-                <div style={{fontFamily:"Orbitron",color:x.c,fontSize:"0.6rem",marginBottom:8,letterSpacing:"0.1em"}}>👤 {x.label}</div>
-                <textarea placeholder={`Craft your prompt for Claude…\n\nBe specific & creative!`} value={x.v} onChange={e=>x.s(e.target.value)}
-                  style={{background:"#070910",border:`1.5px solid ${x.v.length>5?x.c+"60":"#1a2040"}`,borderRadius:6,
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(pList.length,3)},1fr)`,gap:12,marginBottom:20}}>
+            {pList.map((p,i)=>(
+              <div key={p.id}>
+                <div style={{fontFamily:"Orbitron",color:PCOLS[i%PCOLS.length],fontSize:"0.6rem",marginBottom:8,letterSpacing:"0.1em"}}>👤 {p.name}</div>
+                <textarea placeholder={`Craft your prompt for Claude…\n\nBe specific & creative!`}
+                  value={prompts[i]||""} onChange={e=>setPrompt(i,e.target.value)}
+                  style={{background:"#070910",border:`1.5px solid ${(prompts[i]||"").length>5?PCOLS[i%PCOLS.length]+"60":"#1a2040"}`,borderRadius:6,
                     color:"#c0d8f8",fontFamily:"Rajdhani",fontSize:"1rem",padding:"11px 14px",width:"100%",
                     outline:"none",resize:"vertical",minHeight:90,transition:"border-color 0.2s"}}/>
-                <div style={{fontFamily:"Orbitron",fontSize:"0.5rem",color:x.v.length>5?"#2a3560":"#1a2040",marginTop:3}}>{x.v.length} chars</div>
+                <div style={{fontFamily:"Orbitron",fontSize:"0.5rem",color:(prompts[i]||"").length>5?"#2a3560":"#1a2040",marginTop:3}}>{(prompts[i]||"").length} chars</div>
               </div>
             ))}
           </div>
           <div style={{textAlign:"center"}}>
-            <button style={{...btn("#ffe600"),fontSize:"1rem",padding:"16px 52px",opacity:p1.trim()&&p2.trim()?1:0.35}} onClick={battle} disabled={!p1.trim()||!p2.trim()}>
+            <button style={{...btn("#ffe600"),fontSize:"1rem",padding:"16px 52px",opacity:prompts.every(p=>p.trim())?1:0.35}}
+              onClick={battle} disabled={!prompts.every(p=>p.trim())}>
               ⚡ BATTLE!
             </button>
           </div>
@@ -635,49 +642,50 @@ Return:{"winner":1,"p1_score":7,"p2_score":5,"reasoning":"one punchy sentence wh
 
       {phase==="judging"&&(
         <div style={{textAlign:"center",padding:"50px 0"}}>
-          <div style={{display:"flex",justifyContent:"center",gap:28,marginBottom:20}}>
-            {["#00f5ff","#ff00c8"].map((c,i)=>(
-              <div key={i} style={{textAlign:"center"}}>
-                <div style={{width:44,height:44,border:`3px solid ${c}40`,borderTopColor:c,borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 10px"}}/>
-                <div style={{fontFamily:"Orbitron",color:c,fontSize:"0.58rem"}}>P{i+1} RESPONSE</div>
+          <div style={{display:"flex",justifyContent:"center",gap:20,marginBottom:20,flexWrap:"wrap"}}>
+            {pList.map((p,i)=>(
+              <div key={p.id} style={{textAlign:"center"}}>
+                <div style={{width:44,height:44,border:`3px solid ${PCOLS[i%PCOLS.length]}40`,borderTopColor:PCOLS[i%PCOLS.length],borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 10px"}}/>
+                <div style={{fontFamily:"Orbitron",color:PCOLS[i%PCOLS.length],fontSize:"0.56rem"}}>{p.name}</div>
               </div>
             ))}
           </div>
           <div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"0.78rem",letterSpacing:"0.15em"}}>CLAUDE IS JUDGING…</div>
-          <div style={{color:"#252e60",fontSize:"0.8rem",marginTop:8,fontFamily:"Rajdhani"}}>Evaluating both prompts + responses</div>
+          <div style={{color:"#252e60",fontSize:"0.8rem",marginTop:8,fontFamily:"Rajdhani"}}>Evaluating all prompts + responses</div>
         </div>
       )}
 
       {phase==="result"&&res&&(
         <div style={{animation:"fadeUp 0.4s ease both"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:10,marginBottom:16,alignItems:"start"}}>
-            {[1,2].map(n=>(
-              <div key={n} style={{...card(res.winner===n?"#ffe60080":"#1a2040"),animation:res.winner===n?"winGlow 2s ease infinite":"none"}}>
-                {res.winner===n&&<div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"0.58rem",marginBottom:8}}>🏆 WINNER!</div>}
-                <div style={{fontFamily:"Orbitron",color:n===1?"#00f5ff":"#ff00c8",fontSize:"0.58rem",marginBottom:6}}>PLAYER {n}</div>
-                <div style={{color:"#3a4060",fontSize:"0.8rem",marginBottom:8,fontStyle:"italic"}}>"{n===1?p1:p2}"</div>
-                <div style={{fontSize:"0.93rem",lineHeight:1.6,color:"#c0d0f0",marginBottom:10}}>
-                  <Type text={`"${n===1?res.r1:res.r2}"`} speed={24}/>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(pList.length,3)},1fr)`,gap:10,marginBottom:16}}>
+            {pList.map((p,i)=>{
+              const isWin=res.winner===(i+1);
+              const col=PCOLS[i%PCOLS.length];
+              return(
+                <div key={p.id} style={{...card(isWin?"#ffe60080":"#1a2040"),animation:isWin?"winGlow 2s ease infinite":"none"}}>
+                  {isWin&&<div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"0.58rem",marginBottom:8}}>🏆 WINNER!</div>}
+                  <div style={{fontFamily:"Orbitron",color:col,fontSize:"0.58rem",marginBottom:6}}>{p.name}</div>
+                  <div style={{color:"#3a4060",fontSize:"0.8rem",marginBottom:8,fontStyle:"italic"}}>"{prompts[i]}"</div>
+                  <div style={{fontSize:"0.93rem",lineHeight:1.6,color:"#c0d0f0",marginBottom:10}}>
+                    <Type text={`"${res.responses?.[i]??""}`} speed={24}/>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontFamily:"Orbitron",color:"#00f5ff",fontSize:"1.2rem",fontWeight:900}}>{res.scores?.[i]??7}</span>
+                    <span style={{fontFamily:"Orbitron",color:"#1a2040",fontSize:"0.56rem"}}>/10</span>
+                    <span style={{marginLeft:8,background:"#ffffff08",borderRadius:3,padding:"2px 8px",fontSize:"0.72rem",color:"#3a4560",fontStyle:"italic"}}>
+                      {res.badges?.[i]??"Creative"}
+                    </span>
+                  </div>
                 </div>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <span style={{fontFamily:"Orbitron",color:"#00f5ff",fontSize:"1.2rem",fontWeight:900}}>{n===1?res.p1_score:res.p2_score}</span>
-                  <span style={{fontFamily:"Orbitron",color:"#1a2040",fontSize:"0.56rem"}}>/10</span>
-                  <span style={{marginLeft:8,background:"#ffffff08",borderRadius:3,padding:"2px 8px",fontSize:"0.72rem",color:"#3a4560",fontStyle:"italic"}}>
-                    {n===1?res.p1_badge:res.p2_badge}
-                  </span>
-                </div>
-              </div>
-            ))}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",paddingTop:16}}>
-              <div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"1.1rem",fontWeight:900,textShadow:"0 0 10px #ffe600"}}>VS</div>
-            </div>
+              );
+            })}
           </div>
           <div style={{...card("#ffe60028"),marginBottom:18}}>
             <div style={{fontFamily:"Orbitron",color:"#3a4060",fontSize:"0.56rem",marginBottom:6,letterSpacing:"0.1em"}}>🧑‍⚖️ JUDGE'S VERDICT</div>
             <div style={{color:"#d0c080",fontSize:"1rem",fontFamily:"Rajdhani"}}>{res.reasoning}</div>
           </div>
           <div style={{display:"flex",gap:12,justifyContent:"center"}}>
-            <button style={btn("#ffe600",true)} onClick={()=>{setPhase("submit");setP1("");setP2("");setRes(null);setRound(r=>r+1);}}>↺ Next Challenge</button>
+            <button style={btn("#ffe600",true)} onClick={()=>{setPhase("submit");setPrompts(pList.map(()=>""));setRes(null);setRound(r=>r+1);}}>↺ Next Challenge</button>
             <button style={btn("#00f5ff",true)} onClick={onDone}>VIEW RESULTS →</button>
           </div>
         </div>
@@ -942,7 +950,7 @@ function BuzzerMode({ players, onAddScore }) {
           fontFamily:"Orbitron", color:"#00ff90", fontSize:"0.85rem",
           letterSpacing:"0.25em", animation:"pulse 0.7s ease-in-out infinite",
           textShadow:"0 0 14px #00ff90" }}>
-          {mqttConn ? "▶ BUZZ ON YOUR PHONE!" : "▶ TAP YOUR TEAM'S BUTTON!"}
+          {mqttConn ? "▶ BUZZ ON PHONE OR TAP BUTTON!" : "▶ TAP YOUR TEAM'S BUTTON!"}
         </div>
       )}
 
@@ -953,12 +961,12 @@ function BuzzerMode({ players, onAddScore }) {
           const isWinner = winner === p.name;
           const isElim   = disabled.includes(p.name);
           const inactive = isElim || (winner && !isWinner) || displayPhase==="countdown" || displayPhase==="idle";
-          const clickable = !mqttConn && displayPhase==="ready" && !isElim && !winner;
+          const clickable = displayPhase==="ready" && !isElim && !winner;
 
           return (
             <button key={p.id}
-              onClick={() => !mqttConn && localBuzz(p)}
-              disabled={mqttConn || (!clickable && !isWinner)}
+              onClick={() => localBuzz(p)}
+              disabled={!clickable && !isWinner}
               style={{
                 width:"100%", minHeight:90, borderRadius:10,
                 border:`3px solid ${isElim?"#1a2040":isWinner?col:col+"80"}`,
@@ -985,8 +993,7 @@ function BuzzerMode({ players, onAddScore }) {
                 <div style={{ fontFamily:"Rajdhani", fontSize:"0.82rem", fontWeight:600, opacity:0.55, marginTop:2 }}>
                   {isElim?"LOCKED OUT THIS ROUND"
                     :isWinner?"BUZZED FIRST!"
-                    :displayPhase==="ready"&&!mqttConn?"TAP TO BUZZ!"
-                    :displayPhase==="ready"?"WAITING ON PHONE…"
+                    :displayPhase==="ready"?"TAP TO BUZZ!"
                     :"STANDBY"}
                 </div>
               </div>
@@ -1066,7 +1073,7 @@ export default function App() {
 
   function toast_(m,d=1600){setToast(m);setTimeout(()=>setToast(null),d);}
   function addS1(pts){setPlayers(ps=>ps.map((p,i)=>i===0?{...p,score:p.score+pts}:p));if(pts>0)toast_(`+${pts} pts! 🎉`);}
-  function addS2(a,b){setPlayers(ps=>ps.map((p,i)=>{if(i===0&&a>0)return{...p,score:p.score+a};if(i===1&&b>0)return{...p,score:p.score+b};return p;}));toast_(a>0?"🏆 P1 wins! +100":"🏆 P2 wins! +100");}
+  function addS2(winnerIdx){setPlayers(ps=>ps.map((p,i)=>i===winnerIdx?{...p,score:p.score+100}:p));toast_("🏆 +100 pts! 🎉");}
   function addSB(pts,playerId){setPlayers(ps=>ps.map(p=>p.id===playerId?{...p,score:p.score+pts}:p));}
   function addPlayer(){if(!newName.trim())return;setPlayers(ps=>[...ps,{id:Date.now(),name:newName.trim(),score:0}]);setNewName("");toast_("Added! ✓");}
   function doReact(e){const id=Date.now(),x=Math.random()*80+5;setReactions(r=>[...r,{id,e,x}]);setTimeout(()=>setReactions(r=>r.filter(rx=>rx.id!==id)),2400);}
@@ -1236,7 +1243,7 @@ export default function App() {
               </div>
               {screen==="quiz"&&<QuizGame onAddScore={addS1} onDone={finale}/>}
               {screen==="aiorhuman"&&<AiOrHuman onAddScore={addS1} onDone={finale}/>}
-              {screen==="battle"&&<PromptBattle onAddScore={addS2} onDone={finale}/>}
+              {screen==="battle"&&<PromptBattle players={players} onAddScore={addS2} onDone={finale}/>}
               {screen==="buzzer"&&<BuzzerMode players={players} onAddScore={addSB} onDone={()=>go("hub")}/>}
               {/* Reaction bar */}
               <div style={{display:"flex",gap:6,justifyContent:"center",marginTop:20,flexWrap:"wrap",borderTop:"1px solid #1a2040",paddingTop:14}}>
