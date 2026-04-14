@@ -687,25 +687,34 @@ Return:{"winner":1,"p1_score":7,"p2_score":5,"reasoning":"one punchy sentence wh
 
 // ── BUZZER MODE ───────────────────────────────────────────────
 const BUZZER_COLORS = ["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7","#ec4899","#38bdf8"];
+const MAX_WS_RETRIES = 4; // stop retrying after this (e.g. on Vercel)
 
 function BuzzerMode({ players, onAddScore }) {
-  // ── Local host-only state ─────────────────────────────────────
-  const [cdPhase, setCdPhase] = useState(false); // countdown running
-  const [cd, setCd]           = useState(3);
-  const [showQR, setShowQR]   = useState(false);
+  // ── Countdown (always local) ──────────────────────────────────
+  const [cdPhase, setCdPhase] = useState(false);
+  const [cd,      setCd]      = useState(3);
+  const [showQR,  setShowQR]  = useState(false);
 
-  // ── WS-driven state (mirrors server) ─────────────────────────
-  const [wsPhase,       setWsPhase]       = useState("idle");
-  const [wsWinner,      setWsWinner]      = useState(null);
-  const [wsBuzzTime,    setWsBuzzTime]    = useState(null);
-  const [wsDisabled,    setWsDisabled]    = useState([]);
-  const [serverIp,      setServerIp]      = useState(window.location.hostname);
-  const [wsConnected,   setWsConnected]   = useState(false);
+  // ── Local single-screen state (used when WS offline) ─────────
+  const [lPhase,    setLPhase]    = useState("idle");
+  const [lWinner,   setLWinner]   = useState(null);
+  const [lBuzzTime, setLBuzzTime] = useState(null);
+  const [lDisabled, setLDisabled] = useState([]);
+  const lStartRef = useRef(null);
 
-  const wsRef  = useRef(null);
-  const cdRef  = useRef(null);
+  // ── WebSocket state ───────────────────────────────────────────
+  const [wsConnected, setWsConnected] = useState(false);
+  const [wsPhase,     setWsPhase]     = useState("idle");
+  const [wsWinner,    setWsWinner]    = useState(null);
+  const [wsBuzzTime,  setWsBuzzTime]  = useState(null);
+  const [wsDisabled,  setWsDisabled]  = useState([]);
+  const [serverIp,    setServerIp]    = useState(window.location.hostname);
 
-  // ── Scores tracked locally (synced from players prop) ─────────
+  const wsRef      = useRef(null);
+  const cdRef      = useRef(null);
+  const retriesRef = useRef(0);
+
+  // ── Scores (local, synced from players prop) ──────────────────
   const [scores, setScores] = useState(() =>
     Object.fromEntries(players.map(p => [p.id, p.score]))
   );
@@ -713,130 +722,140 @@ function BuzzerMode({ players, onAddScore }) {
     setScores(Object.fromEntries(players.map(p => [p.id, p.score])));
   }, [players]);
 
-  // ── WebSocket connection ──────────────────────────────────────
+  // ── WebSocket — silent retry, give up after MAX_WS_RETRIES ───
   useEffect(() => {
-    let ws;
-    let retryTimer;
-
+    let ws, retryTimer;
     function connect() {
-      ws = new WebSocket(`ws://${window.location.hostname}:3001`);
-      wsRef.current = ws;
-      ws.onopen  = () => setWsConnected(true);
-      ws.onclose = () => {
-        setWsConnected(false);
-        retryTimer = setTimeout(connect, 2000);
-      };
-      ws.onmessage = e => {
-        const msg = JSON.parse(e.data);
-        if (msg.type === "STATE") {
-          setWsPhase(msg.phase);
-          setWsWinner(msg.winner);
-          setWsBuzzTime(msg.buzzTime);
-          setWsDisabled(msg.disabledTeams || []);
-          if (msg.serverIp) setServerIp(msg.serverIp);
-          // Sound feedback when someone buzzes
-          if (msg.phase === "buzzed") S.buzzer();
-          if (msg.phase === "ready")  S.ding();
-        }
-        if (msg.type === "AWARDED") {
-          S.correct();
-          // Find player by name and award score in App state
-          const p = players.find(x => x.name === msg.team);
-          if (p) { onAddScore(msg.points, p.id); setScores(s => ({ ...s, [p.id]: (s[p.id]||0)+msg.points })); }
-        }
-      };
+      if (retriesRef.current >= MAX_WS_RETRIES) return; // give up silently
+      try {
+        ws = new WebSocket(`ws://${window.location.hostname}:3001`);
+        wsRef.current = ws;
+        ws.onopen = () => { setWsConnected(true); retriesRef.current = 0; };
+        ws.onclose = () => {
+          setWsConnected(false);
+          retriesRef.current++;
+          retryTimer = setTimeout(connect, 2500);
+        };
+        ws.onerror = () => {}; // suppress console errors
+        ws.onmessage = e => {
+          const msg = JSON.parse(e.data);
+          if (msg.type === "STATE") {
+            setWsPhase(msg.phase); setWsWinner(msg.winner);
+            setWsBuzzTime(msg.buzzTime); setWsDisabled(msg.disabledTeams || []);
+            if (msg.serverIp) setServerIp(msg.serverIp);
+            if (msg.phase === "buzzed") S.buzzer();
+            if (msg.phase === "ready")  S.ding();
+          }
+          if (msg.type === "AWARDED") {
+            S.correct();
+            const p = players.find(x => x.name === msg.team);
+            if (p) { onAddScore(msg.points, p.id); setScores(s => ({...s,[p.id]:(s[p.id]||0)+msg.points})); }
+          }
+        };
+      } catch {}
     }
-
     connect();
     return () => { ws?.close(); clearTimeout(retryTimer); clearInterval(cdRef.current); };
   }, []);
 
-  // ── Host actions ──────────────────────────────────────────────
+  // ── Derived: pick WS or local state ──────────────────────────
+  const phase    = cdPhase ? "countdown" : wsConnected ? wsPhase    : lPhase;
+  const winner   = wsConnected ? wsWinner   : lWinner;
+  const buzzTime = wsConnected ? wsBuzzTime : lBuzzTime;
+  const disabled = wsConnected ? wsDisabled : lDisabled;
+  const winPlayer = players.find(p => p.name === winner);
+  const playerUrl = (p, i) =>
+    `http://${serverIp}:5173/buzz?team=${encodeURIComponent(p.name)}&ci=${i}`;
+
+  // ── Actions ───────────────────────────────────────────────────
   function startRound() {
     S.swoosh();
+    // Reset local state
+    setLPhase("idle"); setLWinner(null); setLBuzzTime(null); setLDisabled([]);
     setCdPhase(true); setCd(3);
     let c = 3;
     cdRef.current = setInterval(() => {
       c--;
       if (c <= 0) {
-        clearInterval(cdRef.current);
-        setCdPhase(false);
-        wsRef.current?.send(JSON.stringify({ type: "SET_READY" }));
-      } else {
-        S.tick(); setCd(c);
-      }
+        clearInterval(cdRef.current); setCdPhase(false); S.ding();
+        if (wsConnected) {
+          wsRef.current?.send(JSON.stringify({ type: "SET_READY" }));
+        } else {
+          setLPhase("ready"); lStartRef.current = performance.now();
+        }
+      } else { S.tick(); setCd(c); }
     }, 1000);
   }
 
+  function localBuzz(p) {
+    if (phase !== "ready" || lWinner || lDisabled.includes(p.name)) return;
+    const elapsed = ((performance.now() - lStartRef.current) / 1000).toFixed(2);
+    S.buzzer();
+    setLWinner(p.name); setLBuzzTime(elapsed); setLPhase("buzzed");
+  }
+
   function awardCorrect() {
-    if (!wsWinner) return;
-    wsRef.current?.send(JSON.stringify({ type: "AWARD", team: wsWinner, points: 100 }));
+    if (!winner) return;
+    if (wsConnected) {
+      wsRef.current?.send(JSON.stringify({ type: "AWARD", team: winner, points: 100 }));
+    } else {
+      S.correct();
+      const p = players.find(x => x.name === winner);
+      if (p) { onAddScore(100, p.id); setScores(s => ({...s,[p.id]:(s[p.id]||0)+100})); }
+      setLPhase("idle"); setLWinner(null); setLBuzzTime(null); setLDisabled([]);
+    }
   }
 
   function penaliseWrong() {
-    if (!wsWinner) return;
-    S.wrong();
-    wsRef.current?.send(JSON.stringify({ type: "DISABLE_TEAM", team: wsWinner }));
+    if (!winner) return; S.wrong();
+    if (wsConnected) {
+      wsRef.current?.send(JSON.stringify({ type: "DISABLE_TEAM", team: winner }));
+    } else {
+      const next = [...lDisabled, winner];
+      setLDisabled(next); setLWinner(null); setLBuzzTime(null);
+      const remaining = players.filter(p => !next.includes(p.name));
+      if (remaining.length === 0) { setLPhase("idle"); }
+      else { setLPhase("ready"); lStartRef.current = performance.now(); }
+    }
   }
 
   function resetAll() {
     clearInterval(cdRef.current); setCdPhase(false);
+    setLPhase("idle"); setLWinner(null); setLBuzzTime(null); setLDisabled([]);
     wsRef.current?.send(JSON.stringify({ type: "RESET" }));
   }
 
-  // ── Derived ───────────────────────────────────────────────────
-  const phase     = cdPhase ? "countdown" : wsPhase;
-  const winner    = wsWinner;
-  const buzzTime  = wsBuzzTime;
-  const disabled  = wsDisabled;
-  const winPlayer = players.find(p => p.name === winner);
-
-  const playerUrl = (p, i) =>
-    `http://${serverIp}:5173/buzz?team=${encodeURIComponent(p.name)}&ci=${i}`;
-
+  // ── Render ────────────────────────────────────────────────────
   return (
     <div>
       {/* Header */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 16 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
         <div>
           <div style={{ fontFamily:"Orbitron", fontWeight:900, fontSize:"1.1rem" }}>
             <span style={{ color:"#ffe600", textShadow:"0 0 14px #ffe600" }}>🔔 BUZZER </span>
             <span style={{ color:"#00f5ff",  textShadow:"0 0 14px #00f5ff"  }}>MODE</span>
           </div>
           <div style={{ fontFamily:"Orbitron", fontSize:"0.47rem", color:"#1a2244", letterSpacing:"0.15em", marginTop:3 }}>
-            FIRST TO BUZZ WINS THE POINT · MULTI-DEVICE
+            {wsConnected ? "MULTI-DEVICE · PHONES CONNECTED" : "SINGLE SCREEN MODE · CLICK BUTTONS BELOW"}
           </div>
         </div>
-        {/* WS status + QR toggle */}
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-            <div style={{ width:7, height:7, borderRadius:"50%",
-              background: wsConnected?"#00ff90":"#ff4060",
-              boxShadow: wsConnected?"0 0 8px #00ff90":"0 0 8px #ff4060",
-              animation: wsConnected?"none":"pulse 1s infinite",
-            }}/>
-            <span style={{ fontFamily:"Orbitron", fontSize:"0.48rem", color: wsConnected?"#00ff90":"#ff4060" }}>
-              {wsConnected?"WS LIVE":"WS OFF"}
-            </span>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          {/* Mode badge */}
+          <div style={{ ...tag(wsConnected ? "#00ff90" : "#ffe600"),
+            animation: wsConnected ? "none" : "none" }}>
+            {wsConnected ? "📡 MULTI-DEVICE" : "🖥 SINGLE SCREEN"}
           </div>
-          <button onClick={()=>setShowQR(q=>!q)} style={{ ...btn("#ffe600",true), fontSize:"0.55rem" }}>
-            {showQR?"HIDE QR":"📱 QR CODES"}
-          </button>
+          {/* QR button — only useful when WS is live */}
+          {wsConnected && (
+            <button onClick={()=>setShowQR(q=>!q)} style={{ ...btn("#ffe600",true), fontSize:"0.55rem" }}>
+              {showQR ? "HIDE QR" : "📱 QR CODES"}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* WS not connected notice */}
-      {!wsConnected && (
-        <div style={{ ...card("#ff406040","#ff406010"), marginBottom:14, padding:"10px 14px" }}>
-          <div style={{ fontFamily:"Orbitron", color:"#ff4060", fontSize:"0.6rem", marginBottom:4 }}>⚠ BUZZER SERVER OFFLINE</div>
-          <div style={{ color:"#604060", fontSize:"0.82rem" }}>
-            Run <code style={{ background:"#200010", padding:"1px 5px", borderRadius:3, color:"#ff90a0" }}>npm run dev:all</code> to start both Vite + WS server, then refresh.
-          </div>
-        </div>
-      )}
-
-      {/* QR Code panel */}
-      {showQR && (
+      {/* QR Code panel (multi-device only) */}
+      {showQR && wsConnected && (
         <div style={{ ...card("#ffe60030"), marginBottom:16, padding:"14px 16px" }}>
           <div style={{ fontFamily:"Orbitron", color:"#ffe600", fontSize:"0.6rem", marginBottom:12, letterSpacing:"0.1em" }}>
             📱 SCAN TO BUZZ FROM YOUR PHONE
@@ -844,38 +863,32 @@ function BuzzerMode({ players, onAddScore }) {
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:14 }}>
             {players.map((p, i) => {
               const col = BUZZER_COLORS[i % BUZZER_COLORS.length];
-              const url = playerUrl(p, i);
               return (
                 <div key={p.id} style={{ textAlign:"center" }}>
                   <div style={{ display:"inline-block", padding:8, background:"#fff", borderRadius:6,
                     border:`3px solid ${col}`, boxShadow:`0 0 14px ${col}40` }}>
-                    <QRCodeSVG value={url} size={100} bgColor="#ffffff" fgColor="#07080f" level="M"/>
+                    <QRCodeSVG value={playerUrl(p,i)} size={100} bgColor="#ffffff" fgColor="#07080f" level="M"/>
                   </div>
                   <div style={{ fontFamily:"Orbitron", color:col, fontSize:"0.6rem", marginTop:6, fontWeight:700 }}>{p.name}</div>
-                  <div style={{ color:"#252e60", fontSize:"0.6rem", marginTop:2, wordBreak:"break-all" }}>
-                    {serverIp}:5173
-                  </div>
+                  <div style={{ color:"#252e60", fontSize:"0.58rem", marginTop:2 }}>{serverIp}:5173</div>
                 </div>
               );
             })}
           </div>
           <div style={{ fontFamily:"Orbitron", color:"#1a2040", fontSize:"0.5rem", marginTop:12, letterSpacing:"0.1em" }}>
-            ALL PHONES MUST BE ON THE SAME WIFI NETWORK
+            ALL PHONES MUST BE ON THE SAME WIFI AS THE HOST LAPTOP
           </div>
         </div>
       )}
 
       {/* Winner banner */}
       {phase === "buzzed" && winPlayer && (
-        <div style={{
-          background:"linear-gradient(135deg,#ffe60018,#00f5ff18)", border:"2px solid #ffe600",
+        <div style={{ background:"linear-gradient(135deg,#ffe60018,#00f5ff18)", border:"2px solid #ffe600",
           borderRadius:10, padding:"18px 20px", marginBottom:20, textAlign:"center",
-          animation:"pop 0.4s cubic-bezier(0.34,1.56,0.64,1)", boxShadow:"0 0 40px #ffe60050",
-        }}>
+          animation:"pop 0.4s cubic-bezier(0.34,1.56,0.64,1)", boxShadow:"0 0 40px #ffe60050" }}>
           <div style={{ fontSize:"2.2rem", marginBottom:6 }}>🔔</div>
-          <div style={{ fontFamily:"Orbitron", fontWeight:900, fontSize:"1.4rem", color:"#ffe600", textShadow:"0 0 20px #ffe600", marginBottom:4 }}>
-            {winPlayer.name}
-          </div>
+          <div style={{ fontFamily:"Orbitron", fontWeight:900, fontSize:"1.4rem", color:"#ffe600",
+            textShadow:"0 0 20px #ffe600", marginBottom:4 }}>{winPlayer.name}</div>
           <div style={{ fontFamily:"Orbitron", color:"#00f5ff", fontSize:"0.65rem", letterSpacing:"0.15em", marginBottom:8 }}>BUZZED IN FIRST!</div>
           <div style={{ fontFamily:"Orbitron", color:"#252e60", fontSize:"0.58rem" }}>⚡ {buzzTime}s reaction time</div>
         </div>
@@ -895,32 +908,39 @@ function BuzzerMode({ players, onAddScore }) {
         <div style={{ textAlign:"center", marginBottom:16, padding:"10px 0",
           fontFamily:"Orbitron", color:"#00ff90", fontSize:"0.85rem",
           letterSpacing:"0.25em", animation:"pulse 0.7s ease-in-out infinite",
-          textShadow:"0 0 14px #00ff90" }}>▶ BUZZ NOW!</div>
+          textShadow:"0 0 14px #00ff90" }}>
+          {wsConnected ? "▶ BUZZ ON YOUR PHONE!" : "▶ TAP YOUR TEAM'S BUTTON!"}
+        </div>
       )}
 
-      {/* Buzzer buttons — host view */}
+      {/* Buzzer buttons */}
       <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:24 }}>
         {players.map((p, i) => {
           const col      = BUZZER_COLORS[i % BUZZER_COLORS.length];
           const isWinner = winner === p.name;
           const isElim   = disabled.includes(p.name);
-          const inactive = isElim || (winner && !isWinner) || phase === "countdown" || phase === "idle";
+          const inactive = isElim || (winner && !isWinner) || phase==="countdown" || phase==="idle";
+          const clickable = !wsConnected && phase==="ready" && !isElim && !winner;
 
           return (
-            <div key={p.id} style={{
-              width:"100%", minHeight:90, borderRadius:10,
-              border:`3px solid ${isElim?"#1a2040":isWinner?col:col+"80"}`,
-              background: isElim?"#07080f":isWinner?`${col}22`:phase==="ready"?`${col}12`:`${col}08`,
-              color: isElim?"#1a2040":isWinner?col:inactive?col+"40":col,
-              fontFamily:"Orbitron", fontWeight:900, fontSize:"1.2rem", letterSpacing:"0.07em",
-              textShadow: isWinner?`0 0 20px ${col}`:"none",
-              boxShadow: isWinner?`0 0 30px ${col}60,0 0 70px ${col}30,inset 0 0 30px ${col}20`
-                : phase==="ready"&&!inactive?`0 0 14px ${col}40`:"none",
-              animation: isWinner?"buzzWin 0.5s ease,buzzerFlash 0.3s ease 0.5s 3"
-                : phase==="ready"&&!inactive?"readyPulse 1.4s ease-in-out infinite":"none",
-              display:"flex", alignItems:"center", gap:16, padding:"0 20px",
-              position:"relative", overflow:"hidden", transition:"all 0.18s",
-            }}>
+            <button key={p.id}
+              onClick={() => !wsConnected && localBuzz(p)}
+              disabled={wsConnected || (!clickable && !isWinner)}
+              style={{
+                width:"100%", minHeight:90, borderRadius:10,
+                border:`3px solid ${isElim?"#1a2040":isWinner?col:col+"80"}`,
+                background: isElim?"#07080f":isWinner?`${col}22`:phase==="ready"?`${col}12`:`${col}08`,
+                color: isElim?"#1a2040":isWinner?col:inactive?col+"40":col,
+                fontFamily:"Orbitron", fontWeight:900, fontSize:"1.2rem", letterSpacing:"0.07em",
+                cursor: clickable ? "pointer" : "default",
+                textShadow: isWinner?`0 0 20px ${col}`:"none",
+                boxShadow: isWinner?`0 0 30px ${col}60,0 0 70px ${col}30,inset 0 0 30px ${col}20`
+                  : phase==="ready"&&!inactive?`0 0 14px ${col}40`:"none",
+                animation: isWinner?"buzzWin 0.5s ease,buzzerFlash 0.3s ease 0.5s 3"
+                  : phase==="ready"&&!inactive?"readyPulse 1.4s ease-in-out infinite":"none",
+                display:"flex", alignItems:"center", gap:16, padding:"0 20px",
+                position:"relative", overflow:"hidden", transition:"all 0.18s",
+              }}>
               {isWinner && (
                 <div style={{ position:"absolute",inset:0,pointerEvents:"none",
                   background:`linear-gradient(180deg,transparent 30%,${col}18 50%,transparent 70%)`,
@@ -930,13 +950,17 @@ function BuzzerMode({ players, onAddScore }) {
               <div style={{ flex:1, textAlign:"left" }}>
                 <div>{p.name}</div>
                 <div style={{ fontFamily:"Rajdhani", fontSize:"0.82rem", fontWeight:600, opacity:0.55, marginTop:2 }}>
-                  {isElim?"LOCKED OUT THIS ROUND":isWinner?"BUZZED FIRST!":phase==="ready"?"WAITING ON PHONE…":"STANDBY"}
+                  {isElim ? "LOCKED OUT THIS ROUND"
+                    : isWinner ? "BUZZED FIRST!"
+                    : phase==="ready" && !wsConnected ? "TAP TO BUZZ!"
+                    : phase==="ready" ? "WAITING ON PHONE…"
+                    : "STANDBY"}
                 </div>
               </div>
               <div style={{ fontFamily:"Orbitron", fontSize:"1rem", color:isElim?"#1a2040":col, opacity:isElim?0.3:1 }}>
                 {scores[p.id]||0}
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -944,24 +968,20 @@ function BuzzerMode({ players, onAddScore }) {
       {/* Host controls */}
       <div style={{ ...card("#1a2040"), marginBottom:18 }}>
         <div style={{ fontFamily:"Orbitron", color:"#252e60", fontSize:"0.58rem", letterSpacing:"0.12em", marginBottom:14 }}>🎙 HOST CONTROLS</div>
-
         {phase === "idle" && (
-          <button onClick={startRound} disabled={!wsConnected}
-            style={{ ...btn("#ffe600"), width:"100%", fontSize:"0.9rem", padding:"18px 0", opacity:wsConnected?1:0.35 }}>
+          <button onClick={startRound}
+            style={{ ...btn("#ffe600"), width:"100%", fontSize:"0.9rem", padding:"18px 0" }}>
             ▶ START ROUND
           </button>
         )}
-
         {phase === "countdown" && (
           <div style={{ fontFamily:"Orbitron", color:"#252e60", fontSize:"0.7rem", textAlign:"center", padding:"12px 0", letterSpacing:"0.15em" }}>
             COUNTDOWN IN PROGRESS…
           </div>
         )}
-
         {phase === "ready" && (
           <button onClick={resetAll} style={{ ...btn("#ff4060",true), width:"100%" }}>🔄 ABORT ROUND</button>
         )}
-
         {phase === "buzzed" && (
           <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
             <button onClick={awardCorrect} style={{ ...btn("#00ff90"), flex:1, fontSize:"0.7rem" }}>✅ CORRECT — +100 pts</button>
