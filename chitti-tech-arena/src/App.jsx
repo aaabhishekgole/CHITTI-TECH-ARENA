@@ -786,12 +786,31 @@ const BATTLES=[
   {task:"Explain what 'it works on my machine' means to a non-developer",icon:"🖥️"},
 ];
 
+const CLAUDE_KEY = import.meta.env.VITE_ANTHROPIC_KEY || "";
+async function claudeJudge(task, pList, prompts) {
+  if (!CLAUDE_KEY) return null;
+  try {
+    const entries = pList.map((p,i) => `P${i+1}(${p.name}): "${prompts[i]}"`).join(" | ");
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-api-key":CLAUDE_KEY,"anthropic-version":"2023-06-01"},
+      body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:300,
+        system:"Competition judge. Return ONLY valid JSON, no markdown.",
+        messages:[{role:"user",content:`Task: "${task}"\n${entries}\nReturn: {"winner":1,"scores":[8,6],"reasoning":"one punchy sentence why winner is better","badges":["Bold","Creative"]}`}]})
+    });
+    const d = await r.json();
+    const raw = d.content?.[0]?.text || "";
+    return JSON.parse(raw.replace(/```json|```/g,"").trim());
+  } catch { return null; }
+}
+
 function PromptBattle({ players, onAddScore, onDone }) {
   const PCOLS=["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7"];
   const pList=players&&players.length>=2?players:[{id:1,name:"Player 1"},{id:2,name:"Player 2"}];
   const [phase,setPhase]=useState("submit");
   const [prompts,setPrompts]=useState(()=>pList.map(()=>""));
   const [winner,setWinner]=useState(null);
+  const [aiRes,setAiRes]=useState(null);
   const [round,setRound]=useState(0);
   const [confetti,setConfetti]=useState(false);
   const chQueue=useRef(shuffle([...BATTLES]));
@@ -799,9 +818,23 @@ function PromptBattle({ players, onAddScore, onDone }) {
 
   function setPrompt(i,v){setPrompts(ps=>{const n=[...ps];n[i]=v;return n;});}
 
-  function reveal(){
+  async function reveal(){
     if(prompts.some(p=>!p.trim()))return;
-    setPhase("judge");
+    if(CLAUDE_KEY){
+      setPhase("judging");
+      const res = await claudeJudge(ch.task, pList, prompts);
+      if(res){
+        setAiRes(res);
+        const wi = (res.winner||1)-1;
+        setWinner(wi); onAddScore(wi);
+        S.fanfare(); setConfetti(true); setTimeout(()=>setConfetti(false),2800);
+        setPhase("result");
+      } else {
+        setPhase("judge"); // fallback to manual
+      }
+    } else {
+      setPhase("judge"); // no key → manual judging
+    }
   }
 
   function pickWinner(i){
@@ -841,10 +874,25 @@ function PromptBattle({ players, onAddScore, onDone }) {
           <div style={{textAlign:"center"}}>
             <button style={{...btn("#ffe600"),fontSize:"1rem",padding:"16px 52px",opacity:prompts.every(p=>p.trim())?1:0.35}}
               onClick={reveal} disabled={!prompts.every(p=>p.trim())}>
-              👁️ REVEAL & JUDGE
+              {CLAUDE_KEY?"⚡ BATTLE!":"👁️ REVEAL & JUDGE"}
             </button>
           </div>
         </>
+      )}
+
+      {phase==="judging"&&(
+        <div style={{textAlign:"center",padding:"50px 0"}}>
+          <div style={{display:"flex",justifyContent:"center",gap:20,marginBottom:20,flexWrap:"wrap"}}>
+            {pList.map((p,i)=>(
+              <div key={p.id} style={{textAlign:"center"}}>
+                <div style={{width:44,height:44,border:`3px solid ${PCOLS[i%PCOLS.length]}40`,borderTopColor:PCOLS[i%PCOLS.length],borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 10px"}}/>
+                <div style={{fontFamily:"Orbitron",color:PCOLS[i%PCOLS.length],fontSize:"0.56rem"}}>{p.name}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"0.78rem",letterSpacing:"0.15em"}}>CLAUDE IS JUDGING…</div>
+          <div style={{color:"#252e60",fontSize:"0.8rem",marginTop:8,fontFamily:"Rajdhani"}}>Evaluating all responses</div>
+        </div>
       )}
 
       {phase==="judge"&&(
@@ -872,14 +920,34 @@ function PromptBattle({ players, onAddScore, onDone }) {
       )}
 
       {phase==="result"&&winner!==null&&(
-        <div style={{animation:"fadeUp 0.4s ease both",textAlign:"center"}}>
-          <div style={{...card("#ffe60040"),padding:"28px 20px",marginBottom:20}}>
-            <div style={{fontSize:"3rem",marginBottom:8}}>🏆</div>
-            <div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"1.3rem",textShadow:"0 0 20px #ffe600",marginBottom:6}}>{pList[winner]?.name}</div>
-            <div style={{fontFamily:"Orbitron",color:"#252e60",fontSize:"0.6rem",letterSpacing:"0.15em"}}>WINS THIS ROUND! +100 PTS</div>
+        <div style={{animation:"fadeUp 0.4s ease both"}}>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(pList.length,3)},1fr)`,gap:10,marginBottom:16}}>
+            {pList.map((p,i)=>{
+              const isWin=i===winner; const col=PCOLS[i%PCOLS.length];
+              return(
+                <div key={p.id} style={{...card(isWin?"#ffe60060":"#1a2040"),animation:isWin?"winGlow 2s ease infinite":"none",display:"flex",flexDirection:"column",gap:6}}>
+                  {isWin&&<div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"0.56rem"}}>🏆 WINNER!</div>}
+                  <div style={{fontFamily:"Orbitron",color:col,fontSize:"0.58rem"}}>{p.name}</div>
+                  <div style={{fontSize:"0.88rem",color:"#3a4060",fontStyle:"italic",fontFamily:"Rajdhani"}}>"{prompts[i]}"</div>
+                  {aiRes&&(
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4}}>
+                      <span style={{fontFamily:"Orbitron",color:"#00f5ff",fontSize:"1.1rem",fontWeight:900}}>{aiRes.scores?.[i]??"-"}</span>
+                      <span style={{fontFamily:"Orbitron",color:"#1a2040",fontSize:"0.52rem"}}>/10</span>
+                      {aiRes.badges?.[i]&&<span style={{background:"#ffffff08",borderRadius:3,padding:"2px 8px",fontSize:"0.7rem",color:"#3a4560",fontStyle:"italic"}}>{aiRes.badges[i]}</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
+          {aiRes?.reasoning&&(
+            <div style={{...card("#ffe60028"),marginBottom:16}}>
+              <div style={{fontFamily:"Orbitron",color:"#3a4060",fontSize:"0.54rem",marginBottom:6,letterSpacing:"0.1em"}}>🤖 CLAUDE'S VERDICT</div>
+              <div style={{color:"#d0c080",fontSize:"1rem",fontFamily:"Rajdhani"}}>{aiRes.reasoning}</div>
+            </div>
+          )}
           <div style={{display:"flex",gap:12,justifyContent:"center"}}>
-            <button style={btn("#ffe600",true)} onClick={()=>{setPhase("submit");setPrompts(pList.map(()=>""));setWinner(null);setRound(r=>r+1);}}>↺ Next Challenge</button>
+            <button style={btn("#ffe600",true)} onClick={()=>{setPhase("submit");setPrompts(pList.map(()=>""));setWinner(null);setAiRes(null);setRound(r=>r+1);}}>↺ Next Challenge</button>
             <button style={btn("#00f5ff",true)} onClick={onDone}>VIEW RESULTS →</button>
           </div>
         </div>
