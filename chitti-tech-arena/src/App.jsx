@@ -786,20 +786,23 @@ const BATTLES=[
   {task:"Explain what 'it works on my machine' means to a non-developer",icon:"🖥️"},
 ];
 
-const CLAUDE_KEY = import.meta.env.VITE_ANTHROPIC_KEY || "";
-async function claudeJudge(task, pList, prompts) {
-  if (!CLAUDE_KEY) return null;
+async function aiJudge(task, pList, prompts) {
   try {
-    const entries = pList.map((p,i) => `P${i+1}(${p.name}): "${prompts[i]}"`).join(" | ");
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
+    const entries = pList.map((p,i) => `P${i+1} - ${p.name}: "${prompts[i]}"`).join("\n");
+    const r = await fetch("https://api.pollinations.ai/v1/chat/completions", {
       method:"POST",
-      headers:{"Content-Type":"application/json","x-api-key":CLAUDE_KEY,"anthropic-version":"2023-06-01"},
-      body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:300,
-        system:"Competition judge. Return ONLY valid JSON, no markdown.",
-        messages:[{role:"user",content:`Task: "${task}"\n${entries}\nReturn: {"winner":1,"scores":[8,6],"reasoning":"one punchy sentence why winner is better","badges":["Bold","Creative"]}`}]})
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        model:"openai",
+        messages:[
+          {role:"system",content:"You are a sharp competition judge. Return ONLY valid JSON, no markdown, no explanation."},
+          {role:"user",content:`Task: "${task}"\n${entries}\nReturn exactly: {"winner":1,"scores":[8,6],"reasoning":"one punchy sentence why winner is better","badges":["Bold","Creative"]}`}
+        ],
+        seed:Math.floor(Math.random()*9999)
+      })
     });
     const d = await r.json();
-    const raw = d.content?.[0]?.text || "";
+    const raw = d.choices?.[0]?.message?.content || "";
     return JSON.parse(raw.replace(/```json|```/g,"").trim());
   } catch { return null; }
 }
@@ -820,20 +823,16 @@ function PromptBattle({ players, onAddScore, onDone }) {
 
   async function reveal(){
     if(prompts.some(p=>!p.trim()))return;
-    if(CLAUDE_KEY){
-      setPhase("judging");
-      const res = await claudeJudge(ch.task, pList, prompts);
-      if(res){
-        setAiRes(res);
-        const wi = (res.winner||1)-1;
-        setWinner(wi); onAddScore(wi);
-        S.fanfare(); setConfetti(true); setTimeout(()=>setConfetti(false),2800);
-        setPhase("result");
-      } else {
-        setPhase("judge"); // fallback to manual
-      }
+    setPhase("judging");
+    const res = await aiJudge(ch.task, pList, prompts);
+    if(res){
+      setAiRes(res);
+      const wi = Math.max(0, Math.min((res.winner||1)-1, pList.length-1));
+      setWinner(wi); onAddScore(wi);
+      S.fanfare(); setConfetti(true); setTimeout(()=>setConfetti(false),2800);
+      setPhase("result");
     } else {
-      setPhase("judge"); // no key → manual judging
+      setPhase("judge"); // AI failed → fallback to manual host judging
     }
   }
 
@@ -874,7 +873,7 @@ function PromptBattle({ players, onAddScore, onDone }) {
           <div style={{textAlign:"center"}}>
             <button style={{...btn("#ffe600"),fontSize:"1rem",padding:"16px 52px",opacity:prompts.every(p=>p.trim())?1:0.35}}
               onClick={reveal} disabled={!prompts.every(p=>p.trim())}>
-              {CLAUDE_KEY?"⚡ BATTLE!":"👁️ REVEAL & JUDGE"}
+              ⚡ BATTLE!
             </button>
           </div>
         </>
