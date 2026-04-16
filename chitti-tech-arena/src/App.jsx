@@ -36,6 +36,68 @@ const S = {
   ding()    { [1047,1319,1568].forEach((f,i) => setTimeout(() => this.t(f, 0.12, "sine", 0.18), i*70)); },
 };
 
+// ── BACKGROUND MUSIC ENGINE ───────────────────────────────────
+const Music = {
+  _ctx:null, _master:null, _playing:false, _timer:null,
+  ctx(){
+    if(!this._ctx){
+      this._ctx=new(window.AudioContext||window.webkitAudioContext)();
+      this._master=this._ctx.createGain(); this._master.gain.value=0.10;
+      this._master.connect(this._ctx.destination);
+    }
+    return this._ctx;
+  },
+  _note(freq,start,dur,vol=0.12,type='sine'){
+    try{
+      const ctx=this.ctx(),o=ctx.createOscillator(),g=ctx.createGain();
+      o.connect(g);g.connect(this._master);o.type=type;o.frequency.value=freq;
+      g.gain.setValueAtTime(0,start);
+      g.gain.linearRampToValueAtTime(vol,start+0.03);
+      g.gain.linearRampToValueAtTime(0,start+dur);
+      o.start(start);o.stop(start+dur+0.05);
+    }catch{}
+  },
+  _schedule(t){
+    const b=0.5; // beat = 0.5s → 120 BPM
+    // Bass pulse
+    [131,147,165,131,147,131,165,147].forEach((f,i)=>this._note(f,t+i*b,b*0.45,0.15,'sine'));
+    // Bright pads (chord stabs)
+    [[523,659],[494,622],[440,554],[392,494]].forEach(([a,b2],i)=>{
+      this._note(a,t+i*b*2,b*1.8,0.045,'sine');
+      this._note(b2,t+i*b*2,b*1.8,0.035,'sine');
+    });
+    // Hi-hat ticks
+    for(let i=0;i<8;i++) this._note(4000,t+i*b,0.04,0.025,'square');
+    // Snare accent on beats 2 & 4
+    [1,3].forEach(i=>this._note(220,t+i*b*2,0.08,0.06,'sawtooth'));
+    return t+8*b; // returns next loop start time
+  },
+  start(){
+    if(this._playing)return;
+    this._playing=true;
+    const ctx=this.ctx();
+    if(ctx.state==='suspended')ctx.resume();
+    let next=ctx.currentTime+0.05;
+    const loop=()=>{
+      if(!this._playing)return;
+      next=this._schedule(next);
+      this._timer=setTimeout(loop,(next-ctx.currentTime-0.5)*1000);
+    };
+    loop();
+  },
+  stop(){
+    this._playing=false; clearTimeout(this._timer);
+    if(this._master){
+      const t=this.ctx().currentTime;
+      this._master.gain.setValueAtTime(this._master.gain.value,t);
+      this._master.gain.linearRampToValueAtTime(0,t+0.4);
+      setTimeout(()=>{if(this._master)this._master.gain.value=0.10;},500);
+    }
+  },
+  toggle(){this._playing?this.stop():this.start();},
+  playing(){return this._playing;},
+};
+
 // ── QUIZ BANK ─────────────────────────────────────────────────
 const QUIZ_BANK = {
   "JavaScript":[
@@ -504,6 +566,117 @@ function Podium({ players }) {
   );
 }
 
+// ── TEAM INTRO COMPONENT ─────────────────────────────────────
+function TeamIntro({ players, onDone }) {
+  const PCOLS=["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7"];
+  const pList=players&&players.length>=1?players:[{id:1,name:"Team"}];
+  const [phase,setPhase]=useState("ready"); // ready|showing|done
+  const [idx,setIdx]=useState(0);
+  const [timer,setTimer]=useState(5);
+  const [visible,setVisible]=useState(false);
+
+  function startIntro(){setPhase("showing");setIdx(0);setTimer(5);setVisible(false);setTimeout(()=>setVisible(true),100);}
+
+  useEffect(()=>{
+    if(phase!=="showing")return;
+    S.swoosh(); setVisible(false); setTimeout(()=>setVisible(true),80);
+    const t=setInterval(()=>{
+      setTimer(tm=>{
+        if(tm<=1){
+          clearInterval(t);
+          if(idx+1>=pList.length){setPhase("done");}
+          else{setIdx(i=>i+1);setTimer(5);}
+          return 5;
+        }
+        if(tm<=3)S.tick();
+        return tm-1;
+      });
+    },1000);
+    return()=>clearInterval(t);
+  },[idx,phase]);
+
+  const p=pList[idx]; const col=p?PCOLS[idx%PCOLS.length]:"#00f5ff";
+
+  if(phase==="done") return(
+    <div style={{textAlign:"center",padding:"60px 0"}}>
+      <div style={{fontSize:"3rem",marginBottom:16,animation:"float 2s ease-in-out infinite"}}>🎉</div>
+      <div style={{fontFamily:"Orbitron",fontWeight:900,fontSize:"1.3rem",color:"#00ff90",textShadow:"0 0 20px #00ff90",marginBottom:10}}>ALL TEAMS READY!</div>
+      <div style={{color:"#252e60",fontFamily:"Rajdhani",marginBottom:28}}>Let the games begin!</div>
+      <button style={{...btn("#00ff90"),fontSize:"0.9rem",padding:"16px 40px"}} onClick={onDone}>🚀 START GAME</button>
+    </div>
+  );
+
+  if(phase==="ready") return(
+    <div style={{textAlign:"center",padding:"40px 0"}}>
+      <div style={{fontFamily:"Orbitron",color:"#00f5ff",fontSize:"0.78rem",letterSpacing:"0.2em",marginBottom:20}}>🎬 TEAM SPOTLIGHTS</div>
+      <div style={{color:"#252e60",fontFamily:"Rajdhani",fontSize:"1rem",marginBottom:30}}>Each team gets 5 seconds in the spotlight</div>
+      <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginBottom:30}}>
+        {pList.map((p,i)=>(
+          <div key={p.id} style={{padding:"8px 18px",borderRadius:8,border:`1.5px solid ${PCOLS[i%PCOLS.length]}`,
+            fontFamily:"Orbitron",fontSize:"0.65rem",color:PCOLS[i%PCOLS.length]}}>
+            {p.name}
+          </div>
+        ))}
+      </div>
+      <button style={{...btn("#00f5ff"),fontSize:"0.9rem",padding:"16px 40px"}} onClick={startIntro}>🎬 BEGIN INTROS</button>
+    </div>
+  );
+
+  return(
+    <div style={{minHeight:360,display:"flex",flexDirection:"column",alignItems:"center",
+      justifyContent:"center",position:"relative",overflow:"hidden",padding:"20px"}}>
+      {/* Background glow */}
+      <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at center,${col}18 0%,transparent 70%)`,
+        transition:"background 0.5s",pointerEvents:"none"}}/>
+      {/* Team number */}
+      <div style={{fontFamily:"Orbitron",fontSize:"0.55rem",color:col,letterSpacing:"0.25em",marginBottom:18,
+        opacity:visible?1:0,transform:visible?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease"}}>
+        TEAM {idx+1} OF {pList.length}
+      </div>
+      {/* Big team name */}
+      <div style={{fontFamily:"Orbitron",fontWeight:900,
+        fontSize:p&&p.name.length>10?"1.8rem":"2.4rem",
+        color:col,textShadow:`0 0 40px ${col},0 0 80px ${col}60`,
+        textAlign:"center",letterSpacing:"0.05em",
+        opacity:visible?1:0,
+        transform:visible?"translateY(0) scale(1)":"translateY(60px) scale(0.8)",
+        transition:"all 0.6s cubic-bezier(0.34,1.56,0.64,1) 0.05s",
+        marginBottom:24}}>
+        {p?p.name:""}
+      </div>
+      {/* Score badge */}
+      {p&&p.score>0&&(
+        <div style={{fontFamily:"Orbitron",color:col,fontSize:"0.7rem",letterSpacing:"0.1em",
+          background:`${col}15`,border:`1px solid ${col}40`,borderRadius:6,padding:"4px 14px",
+          marginBottom:20,opacity:visible?1:0,transition:"opacity 0.5s 0.3s"}}>
+          {p.score} PTS
+        </div>
+      )}
+      {/* Countdown ring */}
+      <div style={{position:"relative",width:80,height:80,
+        opacity:visible?1:0,transition:"opacity 0.4s 0.2s"}}>
+        <svg width="80" height="80" style={{transform:"rotate(-90deg)"}}>
+          <circle cx="40" cy="40" r="32" fill="none" stroke={`${col}25`} strokeWidth="4"/>
+          <circle cx="40" cy="40" r="32" fill="none" stroke={col} strokeWidth="4"
+            strokeDasharray={`${2*Math.PI*32}`}
+            strokeDashoffset={`${2*Math.PI*32*(1-timer/5)}`}
+            style={{transition:"stroke-dashoffset 0.9s linear"}}/>
+        </svg>
+        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",
+          fontFamily:"Orbitron",fontWeight:900,fontSize:"1.6rem",color:col}}>{timer}</div>
+      </div>
+      {/* Progress dots */}
+      <div style={{display:"flex",gap:8,marginTop:24}}>
+        {pList.map((_,i)=>(
+          <div key={i} style={{width:i===idx?22:8,height:8,borderRadius:4,
+            background:i===idx?col:i<idx?col+"60":"#1a2040",
+            transition:"all 0.4s ease"}}/>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── QUIZ GAME ─────────────────────────────────────────────────
 const HUMAN_QUESTIONS = {
   "JavaScript": {question:"What does typeof null return in JavaScript?",options:["A. null","B. undefined","C. object","D. string"],correct:2,explanation:"typeof null returns 'object' — a famous JS bug kept for compatibility.",fun_fact:"Brendan Eich created JavaScript in just 10 days in 1995!"},
@@ -957,6 +1130,35 @@ function PromptBattle({ players, onAddScore, onDone }) {
   const chQueue=useRef(shuffle([...BATTLES]));
   const ch=chQueue.current[round%chQueue.current.length];
 
+  // ── Audience voting via MQTT ───────────────────────────────
+  const [audRoom]=useState(()=>Math.random().toString(36).substr(2,6).toUpperCase());
+  const [audVotes,setAudVotes]=useState({});
+  const [audOpen,setAudOpen]=useState(false);
+  const audMqtt=useRef(null);
+
+  useEffect(()=>{
+    const client=mqtt.connect("wss://broker.emqx.io:8084/mqtt",{
+      clientId:`chitti_pb_${Math.random().toString(36).substr(2,8)}`,
+      clean:true,reconnectPeriod:3000,connectTimeout:8000,
+    });
+    audMqtt.current=client;
+    client.on("connect",()=>client.subscribe(`chitti/${audRoom}/audvote`,{qos:0}));
+    client.on("message",(_,payload)=>{
+      try{
+        const {team}=JSON.parse(payload.toString());
+        setAudVotes(v=>({...v,[team]:(v[team]||0)+1}));
+      }catch{}
+    });
+    return()=>client.end(true);
+  },[audRoom]);
+
+  function audVoteUrl(){
+    const teams=pList.map(p=>encodeURIComponent(p.name)).join("|");
+    return `${window.location.origin}/vote?room=${audRoom}&teams=${teams}`;
+  }
+
+  const totalAudVotes=Object.values(audVotes).reduce((a,b)=>a+b,0);
+
   function setPrompt(i,v){setPrompts(ps=>{const n=[...ps];n[i]=v;return n;});}
 
   async function reveal(){
@@ -1039,6 +1241,43 @@ function PromptBattle({ players, onAddScore, onDone }) {
           <div style={{...card("#ffe60020"),marginBottom:16,padding:"12px 16px",textAlign:"center"}}>
             <div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"0.6rem",letterSpacing:"0.15em",marginBottom:4}}>🧑‍⚖️ HOST: PICK THE WINNER!</div>
             <div style={{color:"#252e60",fontSize:"0.8rem",fontFamily:"Rajdhani"}}>Read all responses aloud, then tap the best one</div>
+          </div>
+          {/* Audience vote QR */}
+          <div style={{...card("#ff00c820"),marginBottom:16,padding:"12px 16px",border:"1px solid #ff00c840"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{fontFamily:"Orbitron",color:"#ff00c8",fontSize:"0.58rem",letterSpacing:"0.12em"}}>📱 AUDIENCE VOTE</div>
+              <button onClick={()=>setAudOpen(o=>!o)}
+                style={{...btn("#ff00c8",true),fontSize:"0.5rem",padding:"3px 10px"}}>{audOpen?"HIDE QR":"SHOW QR"}</button>
+            </div>
+            {audOpen&&(
+              <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
+                <div style={{background:"#fff",padding:8,borderRadius:6,border:"2px solid #ff00c860"}}>
+                  <QRCodeSVG value={audVoteUrl()} size={90} bgColor="#ffffff" fgColor="#07080f" level="M"/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:"Rajdhani",color:"#3040a0",fontSize:"0.85rem",marginBottom:10}}>Audience scans to vote for best response!</div>
+                  {pList.map((p,i)=>{
+                    const v=audVotes[p.name]||0;
+                    const pct=totalAudVotes>0?Math.round(v/totalAudVotes*100):0;
+                    return(
+                      <div key={p.id} style={{marginBottom:7}}>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                          <span style={{fontFamily:"Orbitron",fontSize:"0.52rem",color:PCOLS[i%PCOLS.length]}}>{p.name}</span>
+                          <span style={{fontFamily:"Orbitron",fontSize:"0.52rem",color:"#252e60"}}>{v} votes · {pct}%</span>
+                        </div>
+                        <div style={{height:8,borderRadius:4,background:"#1a2040",overflow:"hidden"}}>
+                          <div style={{height:"100%",borderRadius:4,background:PCOLS[i%PCOLS.length],
+                            width:`${pct}%`,transition:"width 0.6s ease"}}/>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div style={{fontFamily:"Orbitron",fontSize:"0.46rem",color:"#252e60",marginTop:6,letterSpacing:"0.1em"}}>
+                    {totalAudVotes} AUDIENCE VOTES LIVE
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(pList.length,3)},1fr)`,gap:10,marginBottom:16}}>
             {pList.map((p,i)=>{
@@ -1941,6 +2180,9 @@ export default function App() {
   const [toast,setToast]=useState(null);
   const [confetti,setConfetti]=useState(false);
   const [iStep,setIStep]=useState(0);
+  const [musicOn,setMusicOn]=useState(false);
+
+  function toggleMusic(){ Music.toggle(); setMusicOn(Music.playing()); }
 
   useEffect(()=>{ if(screen!=="intro") return; let i=0; const t=setInterval(()=>{i++;setIStep(i);if(i>=4)clearInterval(t);},700); return()=>clearInterval(t); },[screen]);
 
@@ -2026,7 +2268,11 @@ export default function App() {
                   </div>
                   <div style={{fontFamily:"Orbitron",fontSize:"0.5rem",color:"#1a2244",letterSpacing:"0.15em"}}>ANNUAL FUNCTION · AI GAME SHOW</div>
                 </div>
-                <button style={{...btn("#ffe600",true),fontSize:"0.58rem"}} onClick={finale}>🏆 FINALE</button>
+                <div style={{display:"flex",gap:8}}>
+                  <button style={{...btn("#00ff90",true),fontSize:"0.52rem"}} onClick={()=>go("teamintro")}>🎬 INTROS</button>
+                  <button style={{...btn(musicOn?"#ff4060":"#a855f7",true),fontSize:"0.52rem"}} onClick={toggleMusic}>{musicOn?"🔇 MUSIC":"🎵 MUSIC"}</button>
+                  <button style={{...btn("#ffe600",true),fontSize:"0.58rem"}} onClick={finale}>🏆 FINALE</button>
+                </div>
               </div>
 
               {/* Live score */}
@@ -2104,6 +2350,18 @@ export default function App() {
         )}
 
         {/* ── GAME SCREENS ── */}
+        {screen==="teamintro"&&(
+          <div style={{padding:"14px 16px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontFamily:"Orbitron",fontWeight:900,fontSize:"1rem"}}>
+                <span style={{color:"#00f5ff"}}>CHITTI </span><span style={{color:"#ff00c8"}}>TECH ARENA</span>
+              </div>
+              <button onClick={()=>go("hub")} style={{...btn("#00f5ff",true),fontSize:"0.58rem"}}>← HUB</button>
+            </div>
+            <TeamIntro players={players} onDone={()=>go("hub")}/>
+          </div>
+        )}
+
         {["quiz","aiorhuman","battle","buzzer","lightning","logo"].includes(screen)&&(
           <div>
             <div className="ticker-wrap">
