@@ -240,6 +240,36 @@ function Particles() {
 const TOPICS = ["JavaScript","Python","AI & ML","Cloud","React","Databases","Cyber Security","Git & DevOps"];
 const TCOLORS = ["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7","#ec4899","#38bdf8"];
 
+function ScorePanel({ players, onBack }) {
+  const PCOLS=["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7"];
+  const sorted=[...players].sort((a,b)=>b.score-a.score);
+  return(
+    <div style={{marginTop:24,animation:"fadeUp 0.4s ease"}}>
+      <div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"0.65rem",letterSpacing:"0.15em",marginBottom:12,textAlign:"center"}}>🏆 CURRENT SCORES</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
+        {sorted.map((p,i)=>{
+          const col=PCOLS[players.indexOf(p)%PCOLS.length];
+          const medal=["🥇","🥈","🥉"][i]||"·";
+          return(
+            <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",
+              borderRadius:8,border:`1px solid ${i===0?"#ffe60060":"#1a2040"}`,
+              background:i===0?"#ffe60010":"#0a0c18",
+              animation:i===0?"winGlow 2s ease infinite":"none"}}>
+              <span style={{fontSize:"1.4rem"}}>{medal}</span>
+              <span style={{fontFamily:"Rajdhani",fontWeight:700,fontSize:"1rem",color:col,flex:1}}>{p.name}</span>
+              <span style={{fontFamily:"Orbitron",fontSize:"1.1rem",fontWeight:900,color:i===0?"#ffe600":"#00f5ff"}}>{p.score}</span>
+              <span style={{fontFamily:"Orbitron",fontSize:"0.48rem",color:"#252e60"}}>PTS</span>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{textAlign:"center"}}>
+        <button style={{...btn("#00f5ff"),fontSize:"0.9rem",padding:"14px 40px"}} onClick={onBack}>↩ BACK TO HUB</button>
+      </div>
+    </div>
+  );
+}
+
 function SpinWheel({ onResult }) {
   const ref = useRef(); const [spin, setSpin] = useState(false); const [res, setRes] = useState(null);
   const ang = useRef(0);
@@ -423,10 +453,8 @@ function QuizGame({ players, onAddScore, onDone }) {
     const t=timerRef.current;
     let anyCorrect=false;
     pList.forEach((p,i)=>{
-      if(teamVotes[p.id]===qData.correct){
-        const pts=Math.max(50,t*10)+(streak>=2?50:0);
-        onAddScore(pts,i); anyCorrect=true;
-      }
+      if(teamVotes[p.id]===qData.correct){ onAddScore(50,i); anyCorrect=true; }
+      else if(teamVotes[p.id]!==undefined){ onAddScore(-10,i); }
     });
     if(anyCorrect){S.correct();setStreak(s=>s+1);setConfetti(true);setTimeout(()=>setConfetti(false),2500);}
     else{S.wrong();setStreak(0);}
@@ -457,11 +485,13 @@ function QuizGame({ players, onAddScore, onDone }) {
   }
 
   if(phase==="done") return(
-    <div style={{textAlign:"center",padding:"40px 0"}}>
-      <div style={{fontSize:"3rem",animation:"float 2s ease-in-out infinite",marginBottom:12}}>🎯</div>
-      <div style={{fontFamily:"Orbitron",color:"#00ff90",fontSize:"1.5rem",textShadow:"0 0 14px #00ff90",marginBottom:8}}>Quiz Complete!</div>
-      <div style={{color:"#3040a0",fontFamily:"Rajdhani",marginBottom:24}}>All {TOTAL} {topic} questions answered</div>
-      <button style={btn("#00f5ff")} onClick={onDone}>VIEW FINAL RESULTS →</button>
+    <div style={{padding:"20px 0"}}>
+      <div style={{textAlign:"center",marginBottom:8}}>
+        <div style={{fontSize:"2.5rem",marginBottom:6}}>🎯</div>
+        <div style={{fontFamily:"Orbitron",color:"#00ff90",fontSize:"1.2rem",textShadow:"0 0 14px #00ff90"}}>Quiz Complete!</div>
+        <div style={{color:"#3040a0",fontFamily:"Rajdhani",marginTop:4,fontSize:"0.9rem"}}>All {TOTAL} {topic} questions answered</div>
+      </div>
+      <ScorePanel players={pList} onBack={onDone}/>
     </div>
   );
 
@@ -651,17 +681,19 @@ function AiOrHuman({ players, onAddScore, onDone }) {
     const t=setInterval(()=>{ c--; setRcd(c); S.tick(); if(c<=0){
       clearInterval(t); setRcd(null); setPhase("reveal");
       let any=false;
-      pList.forEach((p,i)=>{ if(votes[p.id]===sample.isAI){onAddScore(80,i);any=true;} });
+      pList.forEach((p,i)=>{ if(votes[p.id]===sample.isAI){onAddScore(50,i);any=true;} else if(votes[p.id]!==undefined){onAddScore(-10,i);} });
       if(any){S.correct();setConfetti(true);setTimeout(()=>setConfetti(false),2500);}
       else S.wrong();
     }},1000);
   }
 
   if(phase==="done") return(
-    <div style={{textAlign:"center",padding:"40px 0"}}>
-      <div style={{fontSize:"3rem",marginBottom:12}}>🤖</div>
-      <div style={{fontFamily:"Orbitron",color:"#ff00c8",fontSize:"1.5rem",textShadow:"0 0 14px #ff00c8",marginBottom:8}}>Round Over!</div>
-      <button style={btn("#ff00c8")} onClick={onDone}>VIEW FINAL RESULTS →</button>
+    <div style={{padding:"20px 0"}}>
+      <div style={{textAlign:"center",marginBottom:8}}>
+        <div style={{fontSize:"2.5rem",marginBottom:6}}>🤖</div>
+        <div style={{fontFamily:"Orbitron",color:"#ff00c8",fontSize:"1.2rem",textShadow:"0 0 14px #ff00c8"}}>Round Over!</div>
+      </div>
+      <ScorePanel players={pList} onBack={onDone}/>
     </div>
   );
 
@@ -828,7 +860,8 @@ function PromptBattle({ players, onAddScore, onDone }) {
     if(res){
       setAiRes(res);
       const wi = Math.max(0, Math.min((res.winner||1)-1, pList.length-1));
-      setWinner(wi); onAddScore(wi);
+      setWinner(wi);
+      pList.forEach((_,j)=>onAddScore(j===wi?50:-10, j));
       S.fanfare(); setConfetti(true); setTimeout(()=>setConfetti(false),2800);
       setPhase("result");
     } else {
@@ -837,7 +870,8 @@ function PromptBattle({ players, onAddScore, onDone }) {
   }
 
   function pickWinner(i){
-    setWinner(i); onAddScore(i);
+    setWinner(i);
+    pList.forEach((_,j)=>onAddScore(j===i?50:-10, j));
     S.fanfare(); setConfetti(true); setTimeout(()=>setConfetti(false),2800);
     setPhase("result");
   }
@@ -945,9 +979,9 @@ function PromptBattle({ players, onAddScore, onDone }) {
               <div style={{color:"#d0c080",fontSize:"1rem",fontFamily:"Rajdhani"}}>{aiRes.reasoning}</div>
             </div>
           )}
-          <div style={{display:"flex",gap:12,justifyContent:"center"}}>
+          <ScorePanel players={pList} onBack={onDone}/>
+          <div style={{textAlign:"center",marginTop:12}}>
             <button style={btn("#ffe600",true)} onClick={()=>{setPhase("submit");setPrompts(pList.map(()=>""));setWinner(null);setAiRes(null);setRound(r=>r+1);}}>↺ Next Challenge</button>
-            <button style={btn("#00f5ff",true)} onClick={onDone}>VIEW RESULTS →</button>
           </div>
         </div>
       )}
@@ -1124,8 +1158,11 @@ function BuzzerMode({ players, onAddScore }) {
 
   function awardCorrect() {
     if (!winner) return; S.correct();
-    const p = players.find(x => x.name === winner);
-    if (p) { onAddScore(100, p.id); setScores(s => ({...s,[p.id]:(s[p.id]||0)+100})); }
+    const wp = players.find(x => x.name === winner);
+    if (wp) {
+      players.forEach(p => onAddScore(p.id===wp.id?50:-10, p.id));
+      setScores(s => ({...s,[wp.id]:(s[wp.id]||0)+50}));
+    }
     phaseRef.current = "idle"; winnerRef.current = null; disabledRef.current = [];
     setPhase("idle"); setWinner(null); setBuzzTime(null); setDisabled([]);
     pubState("idle", null, null, []);
@@ -1412,9 +1449,9 @@ export default function App() {
   useEffect(()=>{ if(screen!=="intro") return; let i=0; const t=setInterval(()=>{i++;setIStep(i);if(i>=4)clearInterval(t);},700); return()=>clearInterval(t); },[screen]);
 
   function toast_(m,d=1600){setToast(m);setTimeout(()=>setToast(null),d);}
-  function addS1(pts,ti=0){setPlayers(ps=>ps.map((p,i)=>i===ti?{...p,score:p.score+pts}:p));if(pts>0)toast_(`+${pts} pts! 🎉`);}
-  function addS2(winnerIdx){setPlayers(ps=>ps.map((p,i)=>i===winnerIdx?{...p,score:p.score+100}:p));toast_("🏆 +100 pts! 🎉");}
-  function addSB(pts,playerId){setPlayers(ps=>ps.map(p=>p.id===playerId?{...p,score:p.score+pts}:p));}
+  function addS1(pts,ti=0){setPlayers(ps=>ps.map((p,i)=>i===ti?{...p,score:Math.max(0,p.score+pts)}:p));if(pts>0)toast_(`+${pts} pts! 🎉`);else if(pts<0)toast_(`-${Math.abs(pts)} pts 😬`);}
+  function addS2(pts,ti=0){setPlayers(ps=>ps.map((p,i)=>i===ti?{...p,score:Math.max(0,p.score+pts)}:p));if(pts>0)toast_(`🏆 +${pts} pts!`);}
+  function addSB(pts,playerId){setPlayers(ps=>ps.map(p=>p.id===playerId?{...p,score:Math.max(0,p.score+pts)}:p));}
   function addPlayer(){if(!newName.trim())return;setPlayers(ps=>[...ps,{id:Date.now(),name:newName.trim(),score:0}]);setNewName("");toast_("Added! ✓");}
   function doReact(e){const id=Date.now(),x=Math.random()*80+5;setReactions(r=>[...r,{id,e,x}]);setTimeout(()=>setReactions(r=>r.filter(rx=>rx.id!==id)),2400);}
   function go(s){S.swoosh();setScreen(s);}
@@ -1581,9 +1618,9 @@ export default function App() {
                 </div>
                 <button onClick={()=>go("hub")} style={{...btn("#00f5ff",true),fontSize:"0.58rem"}}>← HUB</button>
               </div>
-              {screen==="quiz"&&<QuizGame players={players} onAddScore={addS1} onDone={finale}/>}
-              {screen==="aiorhuman"&&<AiOrHuman players={players} onAddScore={addS1} onDone={finale}/>}
-              {screen==="battle"&&<PromptBattle players={players} onAddScore={addS2} onDone={finale}/>}
+              {screen==="quiz"&&<QuizGame players={players} onAddScore={addS1} onDone={()=>go("hub")}/>}
+              {screen==="aiorhuman"&&<AiOrHuman players={players} onAddScore={addS1} onDone={()=>go("hub")}/>}
+              {screen==="battle"&&<PromptBattle players={players} onAddScore={addS2} onDone={()=>go("hub")}/>}
               {screen==="buzzer"&&<BuzzerMode players={players} onAddScore={addSB} onDone={()=>go("hub")}/>}
               {/* Reaction bar */}
               <div style={{display:"flex",gap:6,justifyContent:"center",marginTop:20,flexWrap:"wrap",borderTop:"1px solid #1a2040",paddingTop:14}}>
