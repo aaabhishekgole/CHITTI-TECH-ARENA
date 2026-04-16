@@ -1392,12 +1392,12 @@ function LightningRound({ players, onAddScore, onDone }) {
   const [teamVotes, setTeamVotes] = useState({});
   const [revealed, setRevealed] = useState(false);
   const [confetti, setConfetti] = useState(false);
-  const tref = useRef(); const timerRef = useRef(5);
+  const tref = useRef(); const timerRef = useRef(10);
 
   const q = LIGHTNING_BANK[qIdx % LIGHTNING_BANK.length];
 
   useEffect(()=>{
-    setTeamVotes({}); setRevealed(false); setTimer(5); timerRef.current=5;
+    setTeamVotes({}); setRevealed(false); setTimer(10); timerRef.current=10;
   },[qIdx]);
 
   useEffect(()=>{
@@ -1405,7 +1405,7 @@ function LightningRound({ players, onAddScore, onDone }) {
     tref.current = setInterval(()=>{
       setTimer(t=>{
         const nt=t-1; timerRef.current=nt;
-        S.tick();
+        if(t<=4) S.tick();
         if(t<=1){ clearInterval(tref.current); doReveal(); return 0; }
         return nt;
       });
@@ -1427,7 +1427,12 @@ function LightningRound({ players, onAddScore, onDone }) {
     });
     if(any){ S.correct(); setConfetti(true); setTimeout(()=>setConfetti(false),1500); }
     else S.wrong();
-    setTimeout(()=>{ setPhase("question"); setQIdx(idx=>idx+1); },2000);
+    // No auto-advance — host presses Next manually
+  }
+
+  function nextQ(){
+    if(qIdx+1>=TOTAL){ setQIdx(TOTAL); return; }
+    setPhase("question"); setQIdx(i=>i+1);
   }
 
   if(qIdx>=TOTAL) return(
@@ -1452,7 +1457,7 @@ function LightningRound({ players, onAddScore, onDone }) {
                 <circle cx="22" cy="22" r="18" fill="none" stroke="#1a2040" strokeWidth="3"/>
                 <circle cx="22" cy="22" r="18" fill="none" stroke={timer<=2?"#ff4060":"#ffe600"} strokeWidth="3"
                   strokeDasharray={`${2*Math.PI*18}`}
-                  strokeDashoffset={`${2*Math.PI*18*(1-timer/5)}`}
+                  strokeDashoffset={`${2*Math.PI*18*(1-timer/10)}`}
                   style={{transition:"stroke-dashoffset 0.9s linear,stroke 0.3s"}}/>
               </svg>
               <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",
@@ -1525,6 +1530,14 @@ function LightningRound({ players, onAddScore, onDone }) {
               </div>
             );
           })}
+        </div>
+      )}
+      {/* Manual next button shown after reveal */}
+      {phase==="reveal"&&(
+        <div style={{textAlign:"right",marginTop:14}}>
+          <button style={btn("#ffe600",true)} onClick={nextQ}>
+            {qIdx+1>=TOTAL?"🎉 Finish":"Next Question →"}
+          </button>
         </div>
       )}
     </div>
