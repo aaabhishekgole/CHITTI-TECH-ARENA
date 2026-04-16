@@ -1451,9 +1451,9 @@ export default function App() {
   useEffect(()=>{ if(screen!=="intro") return; let i=0; const t=setInterval(()=>{i++;setIStep(i);if(i>=4)clearInterval(t);},700); return()=>clearInterval(t); },[screen]);
 
   function toast_(m,d=1600){setToast(m);setTimeout(()=>setToast(null),d);}
-  function addS1(pts,ti=0){setPlayers(ps=>ps.map((p,i)=>i===ti?{...p,score:Math.max(0,p.score+pts)}:p));if(pts>0)toast_(`+${pts} pts! 🎉`);else if(pts<0)toast_(`-${Math.abs(pts)} pts 😬`);}
-  function addS2(pts,ti=0){setPlayers(ps=>ps.map((p,i)=>i===ti?{...p,score:Math.max(0,p.score+pts)}:p));if(pts>0)toast_(`🏆 +${pts} pts!`);}
-  function addSB(pts,playerId){setPlayers(ps=>ps.map(p=>p.id===playerId?{...p,score:Math.max(0,p.score+pts)}:p));}
+  function addS1(pts,ti=0){setPlayers(ps=>ps.map((p,i)=>i===ti?{...p,score:p.score+pts}:p));if(pts>0)toast_(`+${pts} pts! 🎉`);else if(pts<0)toast_(`-${Math.abs(pts)} pts 😬`);}
+  function addS2(pts,ti=0){setPlayers(ps=>ps.map((p,i)=>i===ti?{...p,score:p.score+pts}:p));if(pts>0)toast_(`🏆 +${pts} pts!`);}
+  function addSB(pts,playerId){setPlayers(ps=>ps.map(p=>p.id===playerId?{...p,score:p.score+pts}:p));}
   function addPlayer(){if(!newName.trim())return;setPlayers(ps=>[...ps,{id:Date.now(),name:newName.trim(),score:0}]);setNewName("");toast_("Added! ✓");}
   function doReact(e){const id=Date.now(),x=Math.random()*80+5;setReactions(r=>[...r,{id,e,x}]);setTimeout(()=>setReactions(r=>r.filter(rx=>rx.id!==id)),2400);}
   function go(s){S.swoosh();setScreen(s);}
