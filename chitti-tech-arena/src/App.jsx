@@ -1093,6 +1093,49 @@ function BuzzerMode({ players, onAddScore }) {
   const qQueueRef  = useRef([...BUZZER_QUESTIONS]);
   const [currentQ, setCurrentQ] = useState(null);
   const [showAns,  setShowAns]  = useState(false);
+  const hostPopup  = useRef(null);
+
+  function hostPanelHTML(q, revealed) {
+    return `<!DOCTYPE html><html><head><title>Host Panel</title>
+<style>*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#07080f;color:#e0eaff;font-family:sans-serif;padding:20px;min-height:100vh;}
+.label{font-size:0.55rem;letter-spacing:0.15em;color:#ff4060;margin-bottom:6px;font-weight:700;}
+.q{font-size:1.1rem;font-weight:700;line-height:1.6;margin-bottom:18px;color:#e0eaff;}
+.ans{background:#00ff9015;border:1px solid #00ff9050;border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+.ans-text{font-size:1.2rem;font-weight:700;color:#00ff90;margin-bottom:6px;}
+.hint{font-size:0.85rem;color:#3a5570;}
+.footer{margin-top:20px;font-size:0.55rem;color:#1a2040;letter-spacing:0.12em;}
+</style></head><body>
+<div class="label">🔒 HOST EYES ONLY · CHITTI TECH ARENA</div>
+<div class="q">${q ? q.q : '—'}</div>
+<div class="ans">
+  <div class="label">✅ CORRECT ANSWER</div>
+  <div class="ans-text">${q ? q.a : '—'}</div>
+  ${q && q.hint ? `<div class="hint">💡 ${q.hint}</div>` : ''}
+</div>
+<div class="footer">Keep this window on your private screen only</div>
+</body></html>`;
+  }
+
+  function openHostPanel() {
+    if (hostPopup.current && !hostPopup.current.closed) {
+      hostPopup.current.focus(); return;
+    }
+    const popup = window.open('', 'HostPanel',
+      'width=480,height=320,top=100,left=100,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no');
+    hostPopup.current = popup;
+    popup.document.open();
+    popup.document.write(hostPanelHTML(currentQ, showAns));
+    popup.document.close();
+  }
+
+  // Keep popup in sync whenever question changes
+  useEffect(() => {
+    if (!hostPopup.current || hostPopup.current.closed) return;
+    hostPopup.current.document.open();
+    hostPopup.current.document.write(hostPanelHTML(currentQ, showAns));
+    hostPopup.current.document.close();
+  }, [currentQ]);
 
   function nextQuestion() {
     if (qQueueRef.current.length === 0) qQueueRef.current = shuffle([...BUZZER_QUESTIONS]);
@@ -1267,25 +1310,37 @@ function BuzzerMode({ players, onAddScore }) {
 
       {/* ── Question Card ── */}
       {currentQ ? (
-        <div style={{...card("#ffe60018"),marginBottom:16,border:"2px solid #ffe60040",position:"relative"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <span style={{fontFamily:"Orbitron",fontSize:"0.52rem",color:"#ffe600",letterSpacing:"0.12em"}}>💳 INDIAN PAYMENTS — BUZZ TO ANSWER</span>
-            <button onClick={nextQuestion}
-              style={{...btn("#252e60",true),fontSize:"0.5rem",padding:"3px 10px"}}>SKIP →</button>
+        <div style={{marginBottom:16}}>
+          {/* Public question — shown to audience */}
+          <div style={{...card("#ffe60018"),border:"2px solid #ffe60040",position:"relative",marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <span style={{fontFamily:"Orbitron",fontSize:"0.52rem",color:"#ffe600",letterSpacing:"0.12em"}}>💳 INDIAN PAYMENTS — BUZZ TO ANSWER</span>
+              <button onClick={nextQuestion}
+                style={{...btn("#252e60",true),fontSize:"0.5rem",padding:"3px 10px"}}>SKIP →</button>
+            </div>
+            <div style={{fontFamily:"Rajdhani",fontSize:"1.15rem",fontWeight:700,color:"#e0eaff",lineHeight:1.55,marginBottom:showAns?12:0}}>
+              {currentQ.q}
+            </div>
+            {/* Public answer reveal — press only after someone answers */}
+            {showAns && (
+              <div style={{background:"#00ff9012",border:"1px solid #00ff9040",borderRadius:8,padding:"10px 14px"}}>
+                <div style={{fontFamily:"Orbitron",fontSize:"0.5rem",color:"#00ff90",letterSpacing:"0.1em",marginBottom:4}}>✅ CORRECT ANSWER</div>
+                <div style={{fontFamily:"Rajdhani",fontSize:"1.05rem",fontWeight:700,color:"#00ff90",marginBottom:6}}>{currentQ.a}</div>
+                {currentQ.hint&&<div style={{fontFamily:"Rajdhani",fontSize:"0.82rem",color:"#3a4570"}}>💡 {currentQ.hint}</div>}
+              </div>
+            )}
           </div>
-          <div style={{fontFamily:"Rajdhani",fontSize:"1.15rem",fontWeight:700,color:"#e0eaff",lineHeight:1.55,marginBottom:12}}>
-            {currentQ.q}
-          </div>
-          {!showAns ? (
-            <button onClick={()=>setShowAns(true)}
-              style={{...btn("#ffe600",true),fontSize:"0.6rem",width:"100%"}}>
-              👁 REVEAL ANSWER
-            </button>
-          ) : (
-            <div style={{background:"#00ff9012",border:"1px solid #00ff9040",borderRadius:8,padding:"10px 14px"}}>
-              <div style={{fontFamily:"Orbitron",fontSize:"0.5rem",color:"#00ff90",letterSpacing:"0.1em",marginBottom:4}}>ANSWER</div>
-              <div style={{fontFamily:"Rajdhani",fontSize:"1.05rem",fontWeight:700,color:"#00ff90",marginBottom:6}}>{currentQ.a}</div>
-              {currentQ.hint&&<div style={{fontFamily:"Rajdhani",fontSize:"0.82rem",color:"#3a4570"}}>💡 {currentQ.hint}</div>}
+          {/* Reveal button */}
+          {!showAns && (
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setShowAns(true)}
+                style={{...btn("#ffe600",true),fontSize:"0.6rem",flex:1}}>
+                👁 REVEAL ANSWER TO ALL
+              </button>
+              <button onClick={openHostPanel}
+                style={{...btn("#ff00c8",true),fontSize:"0.6rem",whiteSpace:"nowrap"}}>
+                🔒 HOST PANEL
+              </button>
             </div>
           )}
         </div>
