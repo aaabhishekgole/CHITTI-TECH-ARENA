@@ -1183,7 +1183,8 @@ function LightningRound({ players, onAddScore, onDone }) {
     clearInterval(tref.current); setRevealed(true); setPhase("reveal");
     let any=false;
     pList.forEach((p,i)=>{
-      if(teamVotes[p.id]===q.a){ onAddScore(30,i); any=true; }
+      if(teamVotes[p.id]===q.a){ onAddScore(50,i); any=true; }
+      else if(teamVotes[p.id]!==undefined){ onAddScore(-10,i); }
     });
     if(any){ S.correct(); setConfetti(true); setTimeout(()=>setConfetti(false),1500); }
     else S.wrong();
@@ -1280,7 +1281,7 @@ function LightningRound({ players, onAddScore, onDone }) {
                 <span style={{fontFamily:"Orbitron",fontSize:"0.56rem",color:col,flex:"0 0 85px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
                 <span style={{fontFamily:"Orbitron",fontSize:"0.6rem",color:correct?"#00ff90":"#ff4060"}}>
                   {teamVotes[p.id]!==undefined?`${["A","B","C","D"][teamVotes[p.id]]} — `:"No answer — "}
-                  {correct?"✓ +30 pts":"✗"}
+                  {teamVotes[p.id]===undefined?"No answer":correct?"✓ +50 pts":"✗ -10 pts"}
                 </span>
               </div>
             );
