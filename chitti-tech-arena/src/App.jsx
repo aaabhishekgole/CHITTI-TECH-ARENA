@@ -393,39 +393,111 @@ function CTimer({ v, max=20 }) {
 
 // ── PODIUM ────────────────────────────────────────────────────
 function Podium({ players }) {
-  const [show,setShow]=useState(false);
-  useEffect(()=>{setTimeout(()=>setShow(true),300);S.fanfare();},[]);
-  const sorted=[...players].sort((a,b)=>b.score-a.score).slice(0,3);
-  const order=[sorted[1],sorted[0],sorted[2]];
-  const hs=[100,144,72], medals=["🥈","🥇","🥉"], cols=["#aaa","#ffe600","#cd7f32"], labels=["2ND","1ST","3RD"];
-  return (
-    <div style={{textAlign:"center",padding:"20px 0"}}>
-      <div style={{fontFamily:"Orbitron",fontWeight:900,fontSize:"1.6rem",
-        color:"#ffe600",textShadow:"0 0 24px #ffe600,0 0 60px #ffe60050",
-        marginBottom:6,animation:"float 2s ease-in-out infinite"}}>🏆 FINAL RESULTS</div>
-      <div style={{fontFamily:"Orbitron",color:"#1e2848",fontSize:"0.6rem",letterSpacing:"0.2em",marginBottom:36}}>CHITTI TECH ARENA · AI GAME SHOW</div>
-      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"center",gap:14,marginBottom:28}}>
-        {order.map((p,i) => !p ? <div key={i} style={{width:100}}/> : (
-          <div key={p.id} style={{width:100,textAlign:"center",opacity:show?1:0,
-            transform:show?"translateY(0)":"translateY(50px)",
-            transition:`all 0.7s cubic-bezier(0.34,1.56,0.64,1) ${i*0.18}s`}}>
-            <div style={{fontSize:"2.2rem",marginBottom:5,animation:`float ${2.2+i*0.2}s ease-in-out infinite`}}>{medals[i]}</div>
-            <div style={{fontWeight:700,fontSize:"0.9rem",marginBottom:4,color:"#d0e0ff"}}>{p.name}</div>
-            <div style={{fontFamily:"Orbitron",color:cols[i],fontSize:"1.1rem",marginBottom:10,textShadow:`0 0 10px ${cols[i]}`}}>
-              <Count to={p.score}/>
-            </div>
-            <div style={{height:hs[i],borderRadius:"6px 6px 0 0",
-              background:`linear-gradient(180deg,${cols[i]}35,${cols[i]}10)`,
-              border:`2px solid ${cols[i]}`,borderBottom:"none",
-              boxShadow:`0 0 22px ${cols[i]}45`,
-              display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:10,
-              fontFamily:"Orbitron",fontSize:"0.6rem",color:cols[i],letterSpacing:"0.1em"}}>{labels[i]}</div>
-          </div>
-        ))}
+  const sorted=[...players].sort((a,b)=>b.score-a.score);
+  const top=sorted.slice(0,3);
+  const medals=["🥇","🥈","🥉"];
+  const cols=["#ffe600","#c0c0c0","#cd7f32"];
+  const hs=[150,110,80];
+  const labels=["1ST","2ND","3RD"];
+  const order=[top[1],top[0],top[2]]; // 2nd left, 1st centre, 3rd right
+  const orderIdx=[1,0,2];
+  const [step,setStep]=useState(0); // 0=intro,1=show3rd,2=show2nd,3=show1st,4=done
+  const [fireworks,setFireworks]=useState([]);
+
+  useEffect(()=>{
+    const timers=[
+      setTimeout(()=>setStep(1),800),
+      setTimeout(()=>{ setStep(2); S.swoosh(); },2200),
+      setTimeout(()=>{ setStep(3); S.fanfare(); },4000),
+      setTimeout(()=>{
+        setStep(4); S.fanfare();
+        setFireworks([...Array(18)].map((_,i)=>({id:i,x:Math.random()*100,y:Math.random()*60+10,c:["#ffe600","#ff00c8","#00f5ff","#00ff90"][i%4]})));
+        setTimeout(()=>setFireworks([]),3000);
+      },6000),
+    ];
+    return ()=>timers.forEach(clearTimeout);
+  },[]);
+
+  return(
+    <div style={{textAlign:"center",padding:"10px 0",minHeight:400,position:"relative",overflow:"hidden"}}>
+      {/* Fireworks */}
+      {fireworks.map(f=>(
+        <div key={f.id} style={{position:"absolute",left:`${f.x}%`,top:`${f.y}%`,
+          width:8,height:8,borderRadius:"50%",background:f.c,
+          boxShadow:`0 0 12px ${f.c},0 0 30px ${f.c}`,
+          animation:"pop 0.5s ease forwards",pointerEvents:"none",zIndex:100}}/>
+      ))}
+
+      {/* Title */}
+      <div style={{fontFamily:"Orbitron",fontWeight:900,fontSize:"1.7rem",
+        color:"#ffe600",textShadow:"0 0 30px #ffe600,0 0 70px #ffe60050",
+        marginBottom:4,animation:"float 2s ease-in-out infinite",
+        opacity:step>=1?1:0,transform:step>=1?"scale(1)":"scale(0.7)",transition:"all 0.6s cubic-bezier(0.34,1.56,0.64,1)"}}>
+        🏆 FINAL RESULTS
       </div>
-      {sorted.slice(3).map((p,i)=>(
-        <div key={p.id} style={{display:"inline-flex",gap:8,margin:"4px 10px",fontFamily:"Orbitron",fontSize:"0.6rem",color:"#252e60"}}>
-          #{i+4} {p.name} — {p.score}pts
+      <div style={{fontFamily:"Orbitron",color:"#1e2848",fontSize:"0.55rem",letterSpacing:"0.2em",marginBottom:32,
+        opacity:step>=1?1:0,transition:"opacity 0.8s 0.3s"}}>
+        CHITTI TECH ARENA · ANNUAL FUNCTION · AI GAME SHOW
+      </div>
+
+      {/* Podium */}
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"center",gap:16,marginBottom:24}}>
+        {order.map((p,i)=>{
+          const realIdx=orderIdx[i];
+          const visible=(realIdx===2&&step>=1)||(realIdx===1&&step>=2)||(realIdx===0&&step>=3);
+          if(!p) return <div key={i} style={{width:110}}/>;
+          return(
+            <div key={p.id} style={{width:110,textAlign:"center",
+              opacity:visible?1:0,transform:visible?"translateY(0)":"translateY(80px)",
+              transition:`all 0.8s cubic-bezier(0.34,1.56,0.64,1)`}}>
+              {/* Spotlight for 1st */}
+              {realIdx===0&&step>=3&&(
+                <div style={{position:"absolute",left:"50%",top:0,transform:"translateX(-50%)",
+                  width:180,height:300,background:"radial-gradient(ellipse,#ffe60020 0%,transparent 70%)",
+                  pointerEvents:"none",zIndex:0}}/>
+              )}
+              <div style={{fontSize:"2.6rem",marginBottom:6,
+                animation:realIdx===0&&step>=4?`float 1.5s ease-in-out infinite`:`float ${2.5+i*0.3}s ease-in-out infinite`,
+                filter:realIdx===0&&step>=4?"drop-shadow(0 0 14px #ffe600)":"none"}}>
+                {medals[realIdx]}
+              </div>
+              <div style={{fontFamily:"Orbitron",fontWeight:900,fontSize:"0.78rem",marginBottom:4,
+                color:cols[realIdx],textShadow:realIdx===0&&step>=3?`0 0 20px ${cols[realIdx]}`:""}}>{p.name}</div>
+              <div style={{fontFamily:"Orbitron",color:cols[realIdx],fontSize:"1.05rem",marginBottom:10,
+                textShadow:`0 0 12px ${cols[realIdx]}80`}}>
+                <Count to={p.score}/>
+              </div>
+              <div style={{height:hs[realIdx],borderRadius:"8px 8px 0 0",
+                background:`linear-gradient(180deg,${cols[realIdx]}40,${cols[realIdx]}10)`,
+                border:`2px solid ${cols[realIdx]}`,borderBottom:"none",
+                boxShadow:`0 0 28px ${cols[realIdx]}50,inset 0 0 20px ${cols[realIdx]}10`,
+                display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:12,
+                fontFamily:"Orbitron",fontSize:"0.58rem",color:cols[realIdx],letterSpacing:"0.1em",fontWeight:700}}>
+                {labels[realIdx]}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Dramatic 1st place banner */}
+      {step>=4&&top[0]&&(
+        <div style={{marginBottom:16,padding:"12px 20px",
+          background:"linear-gradient(135deg,#ffe60025,#ff00c815,#ffe60025)",
+          border:"2px solid #ffe600",borderRadius:10,
+          boxShadow:"0 0 40px #ffe60050",animation:"pop 0.6s cubic-bezier(0.34,1.56,0.64,1)"}}>
+          <div style={{fontFamily:"Orbitron",fontSize:"0.5rem",color:"#ffe600",letterSpacing:"0.2em",marginBottom:4}}>🎉 WINNER</div>
+          <div style={{fontFamily:"Orbitron",fontWeight:900,fontSize:"1.4rem",color:"#ffe600",
+            textShadow:"0 0 20px #ffe600"}}>{top[0].name}</div>
+          <div style={{fontFamily:"Orbitron",color:"#00f5ff",fontSize:"0.7rem",marginTop:4}}>{top[0].score} POINTS</div>
+        </div>
+      )}
+
+      {/* Others */}
+      {step>=4&&sorted.slice(3).map((p,i)=>(
+        <div key={p.id} style={{display:"inline-flex",gap:8,margin:"3px 8px",
+          fontFamily:"Orbitron",fontSize:"0.58rem",color:"#252e60"}}>
+          #{i+4} {p.name} — {p.score}
         </div>
       ))}
     </div>
@@ -1025,6 +1097,339 @@ function PromptBattle({ players, onAddScore, onDone }) {
 }
 
 // ── BUZZER MODE ───────────────────────────────────────────────
+// ── LIGHTNING ROUND BANK ──────────────────────────────────────
+const LIGHTNING_BANK = shuffle([
+  {q:"Full form of UPI?",opts:["United Payment Interface","Unified Payments Interface","Universal Payment Index","Unified Public Infrastructure"],a:1},
+  {q:"UPI was launched in which year?",opts:["2014","2015","2016","2017"],a:2},
+  {q:"Which organisation operates UPI?",opts:["RBI","SBI","NPCI","SEBI"],a:2},
+  {q:"Max UPI single transaction limit (general)?",opts:["₹50,000","₹1 lakh","₹2 lakh","₹5 lakh"],a:1},
+  {q:"IMPS stands for?",opts:["Immediate Money Payment System","Instant Mobile Payment Service","Immediate Payment Service","Integrated Mobile Payment System"],a:2},
+  {q:"NEFT settles transactions in?",opts:["Real-time","15-min batches","Half-hourly batches","Daily batches"],a:2},
+  {q:"Minimum RTGS transfer amount?",opts:["₹50,000","₹1 lakh","₹2 lakh","₹5 lakh"],a:2},
+  {q:"RuPay card network is owned by?",opts:["RBI","Visa","NPCI","Mastercard"],a:2},
+  {q:"FASTag uses which technology?",opts:["NFC","Bluetooth","RFID","GPS"],a:2},
+  {q:"BHIM stands for?",opts:["Bharat Interface for Money","Banking Hub India Mobile","Bharat Integrated Mobile","Banking Interface for Money"],a:0},
+  {q:"KYC stands for?",opts:["Know Your Customer","Keep Your Credentials","Know Your Currency","Key Your Code"],a:0},
+  {q:"AePS authenticates using?",opts:["PIN","Biometric","OTP","Password"],a:1},
+  {q:"BBPS is used for?",opts:["Stock trading","Bill payments","Bank transfers","Loan applications"],a:1},
+  {q:"Primary regulator of payment systems in India?",opts:["SEBI","IRDAI","RBI","NPCI"],a:2},
+  {q:"POS stands for?",opts:["Point of Sale","Place of Service","Payment of Sale","Point of Service"],a:0},
+  {q:"UPI transaction settlement cycle?",opts:["Same day","T+1","T+2","T+3"],a:1},
+  {q:"Which is NOT a UPI app?",opts:["PhonePe","Google Pay","SWIFT","BHIM"],a:2},
+  {q:"NACH is used for?",opts:["One-time payments","Recurring mandates","International transfers","ATM withdrawals"],a:1},
+  {q:"Full form of NPCI?",opts:["National Payments Corp of India","National Public Credit Institute","New Payments Central India","National Private Credit Institution"],a:0},
+  {q:"QR in QR Code stands for?",opts:["Queue Response","Quick Response","Query Record","Quick Record"],a:1},
+  {q:"Which payment mode works 24x7x365?",opts:["NEFT","RTGS","IMPS","Cheque"],a:2},
+  {q:"Bharat QR supports which networks?",opts:["Only UPI","Only RuPay","Visa, Mastercard, RuPay & UPI","Only Visa"],a:2},
+  {q:"UPI VPA stands for?",opts:["Virtual Payment Address","Verified Payment Account","Variable Payment API","Virtual Public Account"],a:0},
+  {q:"India's first UPI app was?",opts:["PhonePe","Paytm","BHIM","Google Pay"],a:2},
+  {q:"Payment aggregators in India are regulated by?",opts:["SEBI","NPCI","RBI","Ministry of Finance"],a:2},
+]);
+
+// ── LOGO ROUND BANK ───────────────────────────────────────────
+const LOGO_BANK = shuffle([
+  {name:"PhonePe",  color:"#ffffff", bg:"#5f259f", hints:["India's largest UPI app by volume","Purple brand — owned by Walmart","PE = Payment Experience"]},
+  {name:"Razorpay", color:"#ffffff", bg:"#0a2540", hints:["Payment gateway for online businesses","Blue brand, founded 2014 Bangalore","Founded by Harshil Mathur & Shashank Kumar"]},
+  {name:"Paytm",    color:"#00baf2", bg:"#001f5b", hints:["First major Indian digital wallet","Blue & sky-blue brand","Founded by Vijay Shekhar Sharma, 2010"]},
+  {name:"Google Pay",color:"#ffffff",bg:"#1a1a2e", hints:["Google's UPI-based payment app","Short name: GPay","Previously called 'Tez' when launched in India"]},
+  {name:"BharatPe", color:"#ffffff", bg:"#c0392b", hints:["QR code payments for merchants","Red-orange brand","Co-founded by Ashneer Grover"]},
+  {name:"NPCI",     color:"#ffffff", bg:"#006838", hints:["Governs UPI, RuPay, IMPS, NACH","Green brand — not-for-profit","Stands for National Payments Corporation of India"]},
+  {name:"CRED",     color:"#d4af37", bg:"#111111", hints:["Premium credit card bill payment app","Dark luxury brand","Founded by Kunal Shah"]},
+  {name:"RuPay",    color:"#ffffff", bg:"#c0392b", hints:["India's own domestic card network","Red brand by NPCI","Competes with Visa & Mastercard"]},
+  {name:"MobiKwik", color:"#ffffff", bg:"#0066cc", hints:["Indian digital wallet & BNPL","Blue brand","Founded 2009 — one of India's oldest wallets"]},
+  {name:"Cashfree", color:"#ffffff", bg:"#4f46e5", hints:["Payment gateway & bulk payouts","Indigo/purple brand","Backed by Y Combinator & Sequoia"]},
+  {name:"Pine Labs", color:"#ffffff", bg:"#00796b", hints:["POS terminal & merchant payments","Teal brand","Powers payment terminals in retail stores"]},
+  {name:"CRED",     color:"#d4af37", bg:"#111111", hints:["Pay credit card bills, earn rewards","Dark luxury brand","Unicorn founded by Kunal Shah in 2018"]},
+]);
+
+// ── LIGHTNING ROUND COMPONENT ─────────────────────────────────
+function LightningRound({ players, onAddScore, onDone }) {
+  const pList = players&&players.length>=1 ? players : [{id:1,name:"Team"}];
+  const PCOLS = ["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7"];
+  const TOTAL = 10;
+  const [qIdx,  setQIdx]  = useState(0);
+  const [phase, setPhase] = useState("question"); // question | reveal
+  const [timer, setTimer] = useState(5);
+  const [teamVotes, setTeamVotes] = useState({});
+  const [revealed, setRevealed] = useState(false);
+  const [confetti, setConfetti] = useState(false);
+  const tref = useRef(); const timerRef = useRef(5);
+
+  const q = LIGHTNING_BANK[qIdx % LIGHTNING_BANK.length];
+
+  useEffect(()=>{
+    setTeamVotes({}); setRevealed(false); setTimer(5); timerRef.current=5;
+  },[qIdx]);
+
+  useEffect(()=>{
+    if(phase!=="question") return;
+    tref.current = setInterval(()=>{
+      setTimer(t=>{
+        const nt=t-1; timerRef.current=nt;
+        S.tick();
+        if(t<=1){ clearInterval(tref.current); doReveal(); return 0; }
+        return nt;
+      });
+    },1000);
+    return ()=>clearInterval(tref.current);
+  },[phase, qIdx]);
+
+  useEffect(()=>{
+    if(phase!=="question"||revealed) return;
+    if(pList.length>0&&pList.every(p=>teamVotes[p.id]!==undefined)) doReveal();
+  },[teamVotes]);
+
+  function doReveal(){
+    clearInterval(tref.current); setRevealed(true); setPhase("reveal");
+    let any=false;
+    pList.forEach((p,i)=>{
+      if(teamVotes[p.id]===q.a){ onAddScore(30,i); any=true; }
+    });
+    if(any){ S.correct(); setConfetti(true); setTimeout(()=>setConfetti(false),1500); }
+    else S.wrong();
+    setTimeout(()=>{ setPhase("question"); setQIdx(idx=>idx+1); },2000);
+  }
+
+  if(qIdx>=TOTAL) return(
+    <div style={{textAlign:"center",padding:"40px 0"}}>
+      <div style={{fontSize:"3rem",marginBottom:12}}>⚡</div>
+      <div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"1.4rem",textShadow:"0 0 14px #ffe600",marginBottom:8}}>Lightning Round Over!</div>
+      <button style={btn("#ffe600")} onClick={onDone}>VIEW RESULTS →</button>
+    </div>
+  );
+
+  return(
+    <div>
+      <Confetti on={confetti}/>
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{fontFamily:"Orbitron",color:"#ffe600",fontSize:"0.85rem",textShadow:"0 0 10px #ffe600"}}>⚡ LIGHTNING ROUND</div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontFamily:"Orbitron",color:"#252e60",fontSize:"0.62rem"}}>Q{Math.min(qIdx+1,TOTAL)}/{TOTAL}</span>
+          {phase==="question"&&(
+            <div style={{width:44,height:44,position:"relative"}}>
+              <svg width="44" height="44" style={{transform:"rotate(-90deg)"}}>
+                <circle cx="22" cy="22" r="18" fill="none" stroke="#1a2040" strokeWidth="3"/>
+                <circle cx="22" cy="22" r="18" fill="none" stroke={timer<=2?"#ff4060":"#ffe600"} strokeWidth="3"
+                  strokeDasharray={`${2*Math.PI*18}`}
+                  strokeDashoffset={`${2*Math.PI*18*(1-timer/5)}`}
+                  style={{transition:"stroke-dashoffset 0.9s linear,stroke 0.3s"}}/>
+              </svg>
+              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",
+                fontFamily:"Orbitron",fontWeight:900,fontSize:"1rem",color:timer<=2?"#ff4060":"#ffe600"}}>{timer}</div>
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Question */}
+      <div style={{...card("#ffe60022"),border:"2px solid #ffe60040",marginBottom:14}}>
+        <div style={{fontFamily:"Rajdhani",fontSize:"1.15rem",fontWeight:700,color:"#e0eaff",lineHeight:1.6}}>{q.q}</div>
+      </div>
+      {/* Options grid */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+        {q.opts.map((opt,oi)=>{
+          let bc="#1a2040",bg="#0d1020",col="#8090b0";
+          if(phase==="reveal"){ if(oi===q.a){bc="#00ff90";bg="#00ff9018";col="#00ff90";} }
+          return(
+            <div key={oi} style={{padding:"12px 14px",borderRadius:6,border:`2px solid ${bc}`,
+              background:bg,color:col,fontFamily:"Rajdhani",fontSize:"0.95rem",fontWeight:600,
+              boxShadow:phase==="reveal"&&oi===q.a?"0 0 18px #00ff9050":"none",
+              transition:"all 0.3s"}}>
+              <span style={{opacity:0.4,marginRight:7,fontFamily:"Orbitron",fontSize:"0.58rem"}}>{"ABCD"[oi]}</span>
+              {opt}
+            </div>
+          );
+        })}
+      </div>
+      {/* Per-team buzzer buttons */}
+      {phase==="question"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{fontFamily:"Orbitron",fontSize:"0.5rem",color:"#252e60",letterSpacing:"0.12em",marginBottom:2}}>TEAM ANSWERS:</div>
+          {pList.map((p,pi)=>{
+            const col=PCOLS[pi%PCOLS.length];
+            const voted=teamVotes[p.id];
+            return(
+              <div key={p.id} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",
+                borderRadius:8,border:`1px solid ${voted!==undefined?col+"60":"#1a2040"}`,background:"#0a0c18",flexWrap:"wrap"}}>
+                <span style={{fontFamily:"Orbitron",fontSize:"0.54rem",color:col,flex:"0 0 85px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
+                {q.opts.map((_,oi)=>(
+                  <button key={oi} onClick={()=>setTeamVotes(v=>({...v,[p.id]:oi}))}
+                    style={{fontFamily:"Orbitron",fontSize:"0.55rem",padding:"5px 12px",borderRadius:4,
+                      border:`1px solid ${voted===oi?col:"#1a2040"}`,
+                      background:voted===oi?col+"20":"transparent",
+                      color:voted===oi?col:"#3a4570",cursor:"pointer",transition:"all 0.15s"}}>
+                    {"ABCD"[oi]}
+                  </button>
+                ))}
+                {voted!==undefined&&<span style={{color:col,marginLeft:"auto"}}>✓</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* Reveal results */}
+      {phase==="reveal"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
+          {pList.map((p,pi)=>{
+            const col=PCOLS[pi%PCOLS.length];
+            const correct=teamVotes[p.id]===q.a;
+            return(
+              <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",
+                borderRadius:8,border:`1px solid ${correct?"#00ff9060":"#ff406040"}`,
+                background:correct?"#00ff9008":"#ff406008"}}>
+                <span style={{fontFamily:"Orbitron",fontSize:"0.56rem",color:col,flex:"0 0 85px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
+                <span style={{fontFamily:"Orbitron",fontSize:"0.6rem",color:correct?"#00ff90":"#ff4060"}}>
+                  {teamVotes[p.id]!==undefined?`${["A","B","C","D"][teamVotes[p.id]]} — `:"No answer — "}
+                  {correct?"✓ +30 pts":"✗"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── LOGO ROUND COMPONENT ──────────────────────────────────────
+function LogoRound({ players, onAddScore, onDone }) {
+  const pList = players&&players.length>=1 ? players : [{id:1,name:"Team"}];
+  const PCOLS = ["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7"];
+  const TOTAL = 6;
+  const [idx,      setIdx]      = useState(0);
+  const [hintIdx,  setHintIdx]  = useState(0); // 0=max blur, 1=medium, 2=clear
+  const [revealed, setRevealed] = useState(false);
+  const [winner,   setWinner]   = useState(null);
+  const [confetti, setConfetti] = useState(false);
+  const [phase,    setPhase]    = useState("buzz"); // buzz | awarded
+
+  const logo = LOGO_BANK[idx % LOGO_BANK.length];
+  const blurs = [28, 10, 0];
+  const pts   = [150, 100, 50];
+
+  function buzz(p, pi) {
+    if(winner||revealed) return;
+    S.buzzer(); setWinner({p, pi});
+  }
+
+  function awardCorrect() {
+    if(!winner) return;
+    S.correct(); onAddScore(pts[hintIdx], winner.pi);
+    setConfetti(true); setTimeout(()=>setConfetti(false),2500);
+    setRevealed(true); setPhase("awarded");
+  }
+
+  function awardWrong() {
+    S.wrong(); setWinner(null);
+  }
+
+  function nextLogo() {
+    setIdx(i=>i+1); setHintIdx(0); setRevealed(false); setWinner(null); setPhase("buzz");
+  }
+
+  if(idx>=TOTAL) return(
+    <div style={{textAlign:"center",padding:"40px 0"}}>
+      <div style={{fontSize:"3rem",marginBottom:12}}>🏷️</div>
+      <div style={{fontFamily:"Orbitron",color:"#ff00c8",fontSize:"1.4rem",textShadow:"0 0 14px #ff00c8",marginBottom:8}}>Logo Round Over!</div>
+      <button style={btn("#ff00c8")} onClick={onDone}>VIEW RESULTS →</button>
+    </div>
+  );
+
+  return(
+    <div>
+      <Confetti on={confetti}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{fontFamily:"Orbitron",color:"#ff00c8",fontSize:"0.85rem",textShadow:"0 0 10px #ff00c8"}}>🏷️ GUESS THE FINTECH</div>
+        <span style={{fontFamily:"Orbitron",color:"#252e60",fontSize:"0.62rem"}}>LOGO {idx+1}/{TOTAL}</span>
+      </div>
+
+      {/* Logo card with blur */}
+      <div style={{...card(),marginBottom:16,display:"flex",flexDirection:"column",alignItems:"center",
+        padding:"32px 20px",background:logo.bg,border:`2px solid ${logo.color}30`}}>
+        <div style={{
+          fontFamily:"Orbitron",fontWeight:900,fontSize:"2.4rem",color:logo.color,
+          letterSpacing:"0.04em",textShadow:`0 0 30px ${logo.color}80`,
+          filter:`blur(${blurs[hintIdx]}px)`,transition:"filter 0.8s ease",
+          userSelect:"none",textAlign:"center",padding:"10px 20px",
+          background:`${logo.color}10`,borderRadius:12,minWidth:200
+        }}>{logo.name}</div>
+        <div style={{marginTop:14,fontFamily:"Orbitron",fontSize:"0.5rem",color:"#252e60",letterSpacing:"0.15em"}}>
+          {revealed ? `✅ ${logo.name}` : hintIdx===0?"IDENTIFY THIS FINTECH BRAND":hintIdx===1?"GETTING CLEARER…":"FULLY REVEALED"}
+        </div>
+      </div>
+
+      {/* Hints + points */}
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        {logo.hints.map((h,i)=>(
+          <div key={i} style={{flex:1,minWidth:120,...card(i<hintIdx+1?"#ffe60020":"#1a204010"),
+            padding:"8px 12px",opacity:i<hintIdx+1?1:0.3}}>
+            <div style={{fontFamily:"Orbitron",fontSize:"0.45rem",color:"#ffe600",letterSpacing:"0.1em",marginBottom:3}}>
+              HINT {i+1} · {pts[i]} pts
+            </div>
+            <div style={{fontFamily:"Rajdhani",fontSize:"0.82rem",color:i<hintIdx+1?"#d0e0ff":"#1a2040"}}>
+              {i<hintIdx+1 ? h : "???"}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Controls */}
+      {!revealed&&(
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          {hintIdx<2&&(
+            <button onClick={()=>{S.lifeline();setHintIdx(h=>h+1);}}
+              style={{...btn("#ffe600",true),flex:1,fontSize:"0.62rem"}}>
+              💡 NEXT HINT (-{pts[hintIdx]-pts[Math.min(hintIdx+1,2)]} pts)
+            </button>
+          )}
+          <button onClick={()=>{setRevealed(true);setHintIdx(2);}}
+            style={{...btn("#ff4060",true),fontSize:"0.62rem",flex:1}}>
+            👁 REVEAL LOGO
+          </button>
+        </div>
+      )}
+
+      {/* Team buzz buttons */}
+      {!revealed&&phase==="buzz"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+          <div style={{fontFamily:"Orbitron",fontSize:"0.5rem",color:"#252e60",letterSpacing:"0.12em"}}>BUZZ TO ANSWER ({pts[hintIdx]} PTS):</div>
+          {pList.map((p,pi)=>{
+            const col=PCOLS[pi%PCOLS.length];
+            const isW=winner&&winner.p.id===p.id;
+            return(
+              <button key={p.id} onClick={()=>buzz(p,pi)}
+                disabled={!!winner}
+                style={{width:"100%",padding:"14px 18px",borderRadius:8,
+                  border:`2px solid ${isW?col:col+"50"}`,
+                  background:isW?`${col}20`:"#0a0c18",
+                  color:isW?col:col+"80",fontFamily:"Orbitron",fontWeight:700,fontSize:"0.8rem",
+                  cursor:winner?"default":"pointer",textAlign:"left",
+                  boxShadow:isW?`0 0 20px ${col}50`:"none",transition:"all 0.2s"}}>
+                {isW?"🔔 ":""}{p.name}{isW?" — ANSWER NOW!":""}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Host verdict after buzz */}
+      {winner&&!revealed&&(
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={awardCorrect} style={{...btn("#00ff90"),flex:1,fontSize:"0.7rem"}}>✅ CORRECT +{pts[hintIdx]} pts</button>
+          <button onClick={awardWrong}  style={{...btn("#ff4060"),flex:1,fontSize:"0.7rem"}}>❌ WRONG — NEXT TEAM</button>
+        </div>
+      )}
+      {(revealed||phase==="awarded")&&(
+        <div style={{textAlign:"right",marginTop:12}}>
+          <button onClick={nextLogo} style={btn("#ff00c8",true)}>
+            {idx+1>=TOTAL?"🎉 Finish":"Next Logo →"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const BUZZER_COLORS = ["#00f5ff","#ff00c8","#ffe600","#00ff90","#ff6b35","#a855f7","#ec4899","#38bdf8"];
 
 // ── INDIAN PAYMENT DOMAIN QUESTION BANK ───────────────────────
@@ -1551,7 +1956,9 @@ export default function App() {
     {id:"quiz",icon:"🧠",title:"AI Quiz",sub:"Spin wheel · Lifelines · Streaks",c:"#00f5ff"},
     {id:"aiorhuman",icon:"🤖",title:"AI or Human?",sub:"Dramatic countdown reveal",c:"#ff00c8"},
     {id:"battle",icon:"⚔️",title:"Prompt Battle",sub:"Live typing · AI judges",c:"#ffe600"},
-    {id:"buzzer",icon:"🔔",title:"Buzzer Mode",sub:"First to buzz · Host controls",c:"#00ff90"},
+    {id:"buzzer",icon:"🔔",title:"Buzzer Mode",sub:"Indian Payments · Host panel",c:"#00ff90"},
+    {id:"lightning",icon:"⚡",title:"Lightning Round",sub:"5-sec timer · Rapid fire · Payments",c:"#ffe600"},
+    {id:"logo",icon:"🏷️",title:"Guess the Fintech",sub:"Blur reveal · Brand logos",c:"#ff00c8"},
   ];
 
   return(
@@ -1696,7 +2103,7 @@ export default function App() {
         )}
 
         {/* ── GAME SCREENS ── */}
-        {["quiz","aiorhuman","battle","buzzer"].includes(screen)&&(
+        {["quiz","aiorhuman","battle","buzzer","lightning","logo"].includes(screen)&&(
           <div>
             <div className="ticker-wrap">
               <div className="ticker-text">★ CHITTI TECH ARENA — AI GAME SHOW ★ ANNUAL FUNCTION {new Date().getFullYear()} ★ POWERED BY CLAUDE AI ★</div>
@@ -1712,6 +2119,8 @@ export default function App() {
               {screen==="aiorhuman"&&<AiOrHuman players={players} onAddScore={addS1} onDone={()=>go("hub")}/>}
               {screen==="battle"&&<PromptBattle players={players} onAddScore={addS2} onDone={()=>go("hub")}/>}
               {screen==="buzzer"&&<BuzzerMode players={players} onAddScore={addSB} onDone={()=>go("hub")}/>}
+              {screen==="lightning"&&<LightningRound players={players} onAddScore={addS1} onDone={finale}/>}
+              {screen==="logo"&&<LogoRound players={players} onAddScore={addS1} onDone={finale}/>}
               {/* Reaction bar */}
               <div style={{display:"flex",gap:6,justifyContent:"center",marginTop:20,flexWrap:"wrap",borderTop:"1px solid #1a2040",paddingTop:14}}>
                 {EMOJIS.slice(0,8).map(e=>(
