@@ -617,15 +617,17 @@ function QuizGame({ players, onAddScore, onDone }) {
                   const col=PCOLS[pi%PCOLS.length];
                   const voted=teamVotes[p.id];
                   const correct=voted===qData.correct;
-                  const pts=Math.max(50,timerRef.current*10)+(streak>2?50:0);
                   return(
                     <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",
                       borderRadius:8,border:`1px solid ${correct?"#00ff9060":"#ff406040"}`,
                       background:correct?"#00ff9008":"#ff406008"}}>
                       <span style={{fontFamily:"Orbitron",fontSize:"0.58rem",color:col,flex:"0 0 90px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
-                      <span style={{fontFamily:"Orbitron",fontSize:"0.62rem",color:correct?"#00ff90":"#ff4060"}}>
+                      <span style={{fontFamily:"Orbitron",fontSize:"0.62rem",color:correct?"#00ff90":"#ff4060",flex:1}}>
                         {voted!==undefined?`${["A","B","C","D"][voted]} — `:"No answer — "}
-                        {correct?`✓ +${pts} pts`:"✗"}
+                        {correct?"✓":"✗"}
+                      </span>
+                      <span style={{fontFamily:"Orbitron",fontSize:"0.62rem",fontWeight:900,color:correct?"#00ff90":"#ff4060"}}>
+                        {voted!==undefined?(correct?"+50 pts":"-10 pts"):"0 pts"}
                       </span>
                     </div>
                   );
@@ -765,7 +767,7 @@ function AiOrHuman({ players, onAddScore, onDone }) {
                       <span style={{fontSize:"1.2rem"}}>{correct?"✅":"❌"}</span>
                       <span style={{fontFamily:"Orbitron",fontSize:"0.6rem",color:col,flex:1}}>{p.name}</span>
                       <span style={{fontFamily:"Orbitron",fontSize:"0.58rem",color:correct?"#00ff90":"#ff4060"}}>
-                        {correct?"+80 pts":"WRONG"}
+                        {correct?"+50 pts":"-10 pts"}
                       </span>
                     </div>
                   );
@@ -1401,7 +1403,7 @@ function BuzzerMode({ players, onAddScore }) {
         )}
         {displayPhase==="buzzed" && (
           <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
-            <button onClick={awardCorrect} style={{ ...btn("#00ff90"), flex:1, fontSize:"0.7rem" }}>✅ CORRECT — +100 pts</button>
+            <button onClick={awardCorrect} style={{ ...btn("#00ff90"), flex:1, fontSize:"0.7rem" }}>✅ CORRECT — +50 pts</button>
             <button onClick={penaliseWrong} style={{ ...btn("#ff4060"), flex:1, fontSize:"0.7rem" }}>❌ WRONG — NEXT TEAM</button>
             <button onClick={resetAll} style={{ ...btn("#252e60",true), width:"100%", fontSize:"0.62rem", marginTop:2 }}>🔄 RESET BUZZERS</button>
           </div>
